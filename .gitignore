@@ -399,3 +399,11 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+ZetasMoonDiscounts/lib/BepInEx.dll
+ZetasMoonDiscounts/lib/Unity.Netcode.Runtime.dll
+ZetasMoonDiscounts/lib/UnityEngine.CoreModule.dll
+ZetasMoonDiscounts/lib/UnityEngine.dll
+ZetasMoonDiscounts/lib/WeatherRegistry.dll
+ZetasMoonDiscounts/lib/LethalLevelLoader.dll
+ZetasMoonDiscounts/lib/Assembly-CSharp.dll
+ZetasMoonDiscounts/lib/0Harmony.dll
