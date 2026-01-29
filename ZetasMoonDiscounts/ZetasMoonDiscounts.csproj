@@ -43,6 +43,9 @@
     <Reference Include="LethalLevelLoader">
       <HintPath>lib\LethalLevelLoader.dll</HintPath>
     </Reference>
+    <Reference Include="MrovLib">
+      <HintPath>lib\MrovLib.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
@@ -62,6 +65,9 @@
     </Reference>
     <Reference Include="WeatherRegistry">
       <HintPath>lib\WeatherRegistry.dll</HintPath>
+    </Reference>
+    <Reference Include="WeatherTweaks">
+      <HintPath>lib\WeatherTweaks.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
