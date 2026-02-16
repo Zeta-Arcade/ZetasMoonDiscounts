@@ -40,10 +40,12 @@
     <Reference Include="BepInEx">
       <HintPath>lib\BepInEx.dll</HintPath>
     </Reference>
-    <Reference Include="LethalLevelLoader">
+    <Reference Include="LethalLevelLoader, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
       <HintPath>lib\LethalLevelLoader.dll</HintPath>
     </Reference>
-    <Reference Include="MrovLib">
+    <Reference Include="MrovLib, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
       <HintPath>lib\MrovLib.dll</HintPath>
     </Reference>
     <Reference Include="System" />
@@ -63,10 +65,12 @@
     <Reference Include="UnityEngine.CoreModule">
       <HintPath>lib\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
-    <Reference Include="WeatherRegistry">
+    <Reference Include="WeatherRegistry, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
       <HintPath>lib\WeatherRegistry.dll</HintPath>
     </Reference>
-    <Reference Include="WeatherTweaks">
+    <Reference Include="WeatherTweaks, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
       <HintPath>lib\WeatherTweaks.dll</HintPath>
     </Reference>
   </ItemGroup>

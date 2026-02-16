@@ -25,7 +25,7 @@ namespace ZetasMoonDiscounts
     {
         private const string modGUID = "ZetaArcade.ZetasMoonDiscounts";
         private const string modName = "ZetasMoonDiscounts";
-        private const string modVersion = "1.1.0";
+        private const string modVersion = "1.2.0";
         private readonly Harmony harmony = new Harmony(modGUID);
         public static BepInEx.Logging.ManualLogSource Logger;
         public static ZetasMoonDiscountsBase Instance;
