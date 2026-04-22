@@ -25,13 +25,14 @@ namespace ZetasMoonDiscounts
     {
         private const string modGUID = "ZetaArcade.ZetasMoonDiscounts";
         private const string modName = "ZetasMoonDiscounts";
-        private const string modVersion = "1.2.0";
+        private const string modVersion = "1.3.0";
         private readonly Harmony harmony = new Harmony(modGUID);
         public static BepInEx.Logging.ManualLogSource Logger;
         public static ZetasMoonDiscountsBase Instance;
         public ConfigEntry<bool> ApplyBuyingChanges;
         public ConfigEntry<float> NormalSellRate;
         public ConfigEntry<float> ZeroDaysSelLRate;
+        public ConfigEntry<bool> ApplyDiscountChanges;
         public ConfigEntry<int> FreeThreshold; //Equal or below is free, above but not equal is "Downgrade" price
         public ConfigEntry<int> FreeThresholdCap; //Equal or below is free, above but not equal is "Downgrade" price
         public ConfigEntry<int> DowngradeCost;
@@ -53,6 +54,7 @@ namespace ZetasMoonDiscounts
             ApplyBuyingChanges = Config.Bind<bool>("Buying Rate Changes", "Toggle Buying Rate Changes", true, "If true, the below 2 configs will be applied to the Company Buying Rate (How many credits you get for selling things)");
             NormalSellRate = Config.Bind<float>("Buying Rate Changes", "Normal Selling Rate", 1f, "The selling rate at the company on all days except the final day, where 1f = 100%, 0.5f = 50% etc.");
             ZeroDaysSelLRate = Config.Bind<float>("Buying Rate Changes", "Zero Days Selling Rate", 1f, "The selling rate at the company on the final day, where 1f = 100%, 0.5f = 50% etc.");
+            ApplyDiscountChanges = Config.Bind<bool>("Discount Settings", "Toggle Moon Discounts", true, "If true, the below configs will be applied to moons");
             FreeThreshold = Config.Bind<int>("Discount Settings", "Free Threshold", 300, "When at Moon A, if Moon B is this amount cheaper (or even cheaper!) it becomes free to route to. E.g. with the default value of 300, if Moon A costs 800 and you route to it, then any moons that cost 500 or less are free to route to.");
             FreeThresholdCap = Config.Bind<int>("Discount Settings", "Free Threshold Cap", 1000, "A Cap for the above config, where if a moon costs this amount or more, then other moons cannot route down to it for free. Note moons that are $3500 cheaper than the current moon or more are set to free anyways, bypassing this config");
             DowngradeCost = Config.Bind<int>("Discount Settings", "Downgrade Cost", 50, "When at Moon A, if Moon B is cheaper but isn't cheap enough to become free with the above config (or costs the same amount as Moon A), then it will be this route price instead.");
@@ -88,167 +90,175 @@ namespace ZetasMoonDiscounts
         }
         public void CalculateMoonPrices()
         {
-            Logger.LogDebug($"Attempting CalculateMoonPrices");
-            if (MoonDefaultCosts.Count < 1 && !IronmanMode.Value)
+            if (ApplyDiscountChanges.Value)
             {
-                Logger.LogDebug($"Default moon prices have not been set, skipping Calculation of moon prices");
-            }
-            else
-            {
-                Logger.LogDebug($"Default moon prices been set, continuing");
-                if (!StartOfRound.Instance) return;
-                if (!StartOfRound.Instance.currentLevel) return;
-                SelectableLevel currentLevel = StartOfRound.Instance.currentLevel;
-                Logger.LogDebug($"Got current level ref");
-                ExtendedLevel currentExtendedLevel = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == currentLevel);
-                if (!IronmanMode.Value) //If in normal mode
+                Logger.LogDebug($"Attempting CalculateMoonPrices");
+                if (MoonDefaultCosts.Count < 1 && !IronmanMode.Value)
                 {
-                    foreach (ExtendedLevel level in PatchedContent.ExtendedLevels)
-                    {
-                        level.RoutePrice = MoonDefaultCosts.Find(x => x.Level == level).OriginalPrice; //Set all prices back to default
-                    }
-                    if (currentExtendedLevel.NumberlessPlanetName == "Gordion" || currentExtendedLevel.NumberlessPlanetName == "Galetry" || currentExtendedLevel.NumberlessPlanetName == "Oxyde" || currentExtendedLevel.RoutePrice == 0)
-                    {
-                        //CURRENT moon is free/company so dont bother doing discounts
-                        Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + " is free/company/oxyde, so no discounts will be applied");
-                    }
-                    else
-                    {
-                        Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + " is not free/company/oxyde, so discounts will be applied");
-                        foreach (ExtendedLevel level in PatchedContent.ExtendedLevels) //Looping through every level
-                        {
-                            if (level.NumberlessPlanetName == "Gordion" || level.NumberlessPlanetName == "Galetry" || level.NumberlessPlanetName == "Oxyde" || level.NumberlessPlanetName == currentExtendedLevel.NumberlessPlanetName || level.RoutePrice == 0)
-                            {
-                                // "Other moon" is the same moon, or free or company, so keep route prices to them unchanged
-                                level.RoutePrice = MoonDefaultCosts.Find(x => x.Level == level).OriginalPrice;
-                            }
-                            else
-                            {
-                                //If other moon is X amount cheaper or more, make route price free
-
-                                int CostDif = currentExtendedLevel.RoutePrice - level.RoutePrice;
-                                if (CostDif >= FreeThreshold.Value && level.RoutePrice < FreeThresholdCap.Value || CostDif >= 3500) // E.g. Checks the other moon is cheap enough but also isn't at the cap
-                                {
-                                    level.RoutePrice = 0; //Makes it free
-                                    Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + "(" + currentExtendedLevel.RoutePrice + ")" + " --> " + level.NumberlessPlanetName + "(" + level.RoutePrice + ")" + " Meets the free discount criteria");
-                                }
-                                else if (level.RoutePrice <= currentExtendedLevel.RoutePrice) //Else, if it is still cheaper or same price, then make it cost 50 to route to
-                                {
-                                    level.RoutePrice = DowngradeCost.Value; //Makes discounted, default 50
-                                    Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + "(" + currentExtendedLevel.RoutePrice + ")" + " --> " + level.NumberlessPlanetName + "(" + level.RoutePrice + ")" + " Meets the downgrade discount criteria");
-                                }
-                                else
-                                { // Else, it must be more expensive then, so flip CostDif, e.g. Rend 750 Dine 800, so 800-750 = 50
-                                    CostDif = level.RoutePrice - currentExtendedLevel.RoutePrice;
-                                    if (CostDif <= UpgradeThreshold.Value)
-                                    {
-                                        level.RoutePrice = CostDif; //Upgrade price is just the CostDif between the 2 moons
-                                        Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + "(" + currentExtendedLevel.RoutePrice + ")" + " --> " + level.NumberlessPlanetName + "(" + level.RoutePrice + ")" + " Meets the upgrade discount criteria");
-                                    }
-                                    else
-                                    {
-                                        //The moon does not meet any of the criteria, so it's cost must be set back to default
-                                        level.RoutePrice = MoonDefaultCosts.Find(x => x.Level == level).OriginalPrice;
-                                        Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + "(" + currentExtendedLevel.RoutePrice + ")" + " --> " + level.NumberlessPlanetName + "(" + level.RoutePrice + ")" + " Does not meet any discount criteria");
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    Logger.LogDebug($"Default moon prices have not been set, skipping Calculation of moon prices");
                 }
                 else
                 {
-                    // Ironman Mode :KaguyaFace:
-                    Logger.LogDebug($"Ironman Mode Detected");
-
-                    if (currentExtendedLevel.NumberlessPlanetName == "Gordion" || currentExtendedLevel.NumberlessPlanetName == "Galetry" || currentExtendedLevel.NumberlessPlanetName == "Oxyde")
+                    Logger.LogDebug($"Default moon prices been set, continuing");
+                    if (!StartOfRound.Instance) return;
+                    if (!StartOfRound.Instance.currentLevel) return;
+                    SelectableLevel currentLevel = StartOfRound.Instance.currentLevel;
+                    Logger.LogDebug($"Got current level ref");
+                    ExtendedLevel currentExtendedLevel = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == currentLevel);
+                    if (!IronmanMode.Value) //If in normal mode
                     {
-                        Logger.LogDebug($"Ironman Is Company");
-                        string[] entries = IronmanMoons.Value.ToString().Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries); //E.g. 0@Exp@Vow;300@Assurance@Solace; --> 0@Exp@Vow + 0@Assurance@Solace (Each are 1 entry)
-                        foreach (string entry in entries) //For each Pair of moons....
+                        foreach (ExtendedLevel level in PatchedContent.ExtendedLevels)
                         {
-                            Logger.LogDebug($"Ironman currently on entry " + entry);
-                            string[] pairs = entry.Split(new[] { '@' }, StringSplitOptions.RemoveEmptyEntries); //Split them, E.g. 0@Exp@Vow --> 0 + Exp + Vow
-                            //Current moon is company so go through each pair, find their associated ExtendedLevel, and set RouteCost to the first value converted to int (with error checking)
-                            int index = 0;
-                            foreach (string pair in pairs) // E.g. 0 + Exp + Vow
+                            level.RoutePrice = MoonDefaultCosts.Find(x => x.Level == level).OriginalPrice; //Set all prices back to default
+                        }
+                        if (currentExtendedLevel.NumberlessPlanetName == "Gordion" || currentExtendedLevel.NumberlessPlanetName == "Galetry" || currentExtendedLevel.NumberlessPlanetName == "Oxyde" || currentExtendedLevel.RoutePrice == 0)
+                        {
+                            //CURRENT moon is free/company so dont bother doing discounts
+                            Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + " is free/company/oxyde, so no discounts will be applied");
+                        }
+                        else
+                        {
+                            Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + " is not free/company/oxyde, so discounts will be applied");
+                            foreach (ExtendedLevel level in PatchedContent.ExtendedLevels) //Looping through every level
                             {
-                                Logger.LogDebug($"Ironman currently on pair " + pair);
-                                if (index != 0) //Skips the first value, since that should be a number
-                                { //Finds the first matching level in list
-                                    ExtendedLevel currentConfigLevel = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == WeatherRegistry.ConfigHelper.ConvertStringToLevels(pair)[0]);
-                                    int value;
-                                    bool firstValueValid = int.TryParse(pairs[0].ToString(), out value);
-                                    if (firstValueValid)
+                                if (level.NumberlessPlanetName == "Gordion" || level.NumberlessPlanetName == "Galetry" || level.NumberlessPlanetName == "Oxyde" || level.NumberlessPlanetName == currentExtendedLevel.NumberlessPlanetName || level.RoutePrice == 0)
+                                {
+                                    // "Other moon" is the same moon, or free or company, so keep route prices to them unchanged
+                                    level.RoutePrice = MoonDefaultCosts.Find(x => x.Level == level).OriginalPrice;
+                                }
+                                else
+                                {
+                                    //If other moon is X amount cheaper or more, make route price free
+
+                                    int CostDif = currentExtendedLevel.RoutePrice - level.RoutePrice;
+                                    if (CostDif >= FreeThreshold.Value && level.RoutePrice < FreeThresholdCap.Value || CostDif >= 3500) // E.g. Checks the other moon is cheap enough but also isn't at the cap
                                     {
-                                        Logger.LogDebug($"Setting " + currentConfigLevel.NumberlessPlanetName + " route price to " + value);
-                                        currentConfigLevel.RoutePrice = value; //Assigns the first "pair" value as the RoutePrice for the moon
+                                        level.RoutePrice = 0; //Makes it free
+                                        Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + "(" + currentExtendedLevel.RoutePrice + ")" + " --> " + level.NumberlessPlanetName + "(" + level.RoutePrice + ")" + " Meets the free discount criteria");
+                                    }
+                                    else if (level.RoutePrice <= DowngradeCost.Value) //Else, if the route price is lower than the downgrade price, just keep it the same
+                                    {
+                                        //level.RoutePrice = DowngradeCost.Value; 
+                                        Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + "(" + currentExtendedLevel.RoutePrice + ")" + " --> " + level.NumberlessPlanetName + "(" + level.RoutePrice + ")" + " Meets the downgrade discount criteria but is so cheap it will stay the same price");
+                                    }
+                                    else if (level.RoutePrice <= currentExtendedLevel.RoutePrice) //Else, if it is still cheaper or same price, then make it cost 50 to route to
+                                    {
+                                        level.RoutePrice = DowngradeCost.Value; //Makes discounted, default 50
+                                        Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + "(" + currentExtendedLevel.RoutePrice + ")" + " --> " + level.NumberlessPlanetName + "(" + level.RoutePrice + ")" + " Meets the downgrade discount criteria");
+                                    }
+                                    else
+                                    { // Else, it must be more expensive then, so flip CostDif, e.g. Rend 750 Dine 800, so 800-750 = 50
+                                        CostDif = level.RoutePrice - currentExtendedLevel.RoutePrice;
+                                        if (CostDif <= UpgradeThreshold.Value)
+                                        {
+                                            level.RoutePrice = CostDif; //Upgrade price is just the CostDif between the 2 moons
+                                            Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + "(" + currentExtendedLevel.RoutePrice + ")" + " --> " + level.NumberlessPlanetName + "(" + level.RoutePrice + ")" + " Meets the upgrade discount criteria");
+                                        }
+                                        else
+                                        {
+                                            //The moon does not meet any of the criteria, so it's cost must be set back to default
+                                            level.RoutePrice = MoonDefaultCosts.Find(x => x.Level == level).OriginalPrice;
+                                            Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + "(" + currentExtendedLevel.RoutePrice + ")" + " --> " + level.NumberlessPlanetName + "(" + level.RoutePrice + ")" + " Does not meet any discount criteria");
+                                        }
                                     }
                                 }
-                                index++;
                             }
                         }
                     }
                     else
-                    { //Set route price to paired moon and current to 0, set route price to others besides company to 9999
-                        Logger.LogDebug($"Ironman is a normal moon");
-                        bool foundMoonInPair = false;
-                        List<string> pairedMoonNames = new List<string>();
-                        string[] entries = IronmanMoons.Value.ToString().Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries); //E.g. 0@Exp@Vow;300@Assurance@Solace; --> 0@Exp@Vow + 0@Assurance@Solace (Each are 1 entry)
-                        foreach (string entry in entries) //For each group of moons in the config...
+                    {
+                        // Ironman Mode :KaguyaFace:
+                        Logger.LogDebug($"Ironman Mode Detected");
+
+                        if (currentExtendedLevel.NumberlessPlanetName == "Gordion" || currentExtendedLevel.NumberlessPlanetName == "Galetry" || currentExtendedLevel.NumberlessPlanetName == "Oxyde")
                         {
-                            string[] pairs = entry.Split(new[] { '@' }, StringSplitOptions.RemoveEmptyEntries); //Split them, E.g. 0@Exp@Vow --> 0 + Exp + Vow 
-                            int index = 0;
-                            foreach (string pair in pairs)
+                            Logger.LogDebug($"Ironman Is Company");
+                            string[] entries = IronmanMoons.Value.ToString().Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries); //E.g. 0@Exp@Vow;300@Assurance@Solace; --> 0@Exp@Vow + 0@Assurance@Solace (Each are 1 entry)
+                            foreach (string entry in entries) //For each Pair of moons....
                             {
-                                if (index != 0) //Skips the initial number part of the config
+                                Logger.LogDebug($"Ironman currently on entry " + entry);
+                                string[] pairs = entry.Split(new[] { '@' }, StringSplitOptions.RemoveEmptyEntries); //Split them, E.g. 0@Exp@Vow --> 0 + Exp + Vow
+                                                                                                                    //Current moon is company so go through each pair, find their associated ExtendedLevel, and set RouteCost to the first value converted to int (with error checking)
+                                int index = 0;
+                                foreach (string pair in pairs) // E.g. 0 + Exp + Vow
                                 {
-                                    ExtendedLevel currentConfigLevel = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == WeatherRegistry.ConfigHelper.ConvertStringToLevels(pairs[index])[0]);
-                                    Logger.LogDebug($"Current level is: " + currentExtendedLevel.NumberlessPlanetName + " and Current config level is " + currentConfigLevel.NumberlessPlanetName);
-                                    if (currentExtendedLevel.NumberlessPlanetName == currentConfigLevel.NumberlessPlanetName)
-                                    { //If current level = level in this particular config entry E.g. if Exp=Exp
-                                        foundMoonInPair = true; //Set flag to true and add then loop through the config again to add each moon in it
-                                        int index2 = 0;
-                                        foreach (string pair2 in pairs)
+                                    Logger.LogDebug($"Ironman currently on pair " + pair);
+                                    if (index != 0) //Skips the first value, since that should be a number
+                                    { //Finds the first matching level in list
+                                        ExtendedLevel currentConfigLevel = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == WeatherRegistry.ConfigHelper.ConvertStringToLevels(pair)[0]);
+                                        int value;
+                                        bool firstValueValid = int.TryParse(pairs[0].ToString(), out value);
+                                        if (firstValueValid)
                                         {
-                                            if (index2 != 0)
-                                            {
-                                                ExtendedLevel currentConfigLevel2 = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == WeatherRegistry.ConfigHelper.ConvertStringToLevels(pairs[index2])[0]);
-                                                Logger.LogDebug($"Trying to add " + pairs[index2] + " passed as " + currentConfigLevel2);
-                                                pairedMoonNames.Add(currentConfigLevel2.NumberlessPlanetName); //Always adds 
-                                            }
-                                            index2++;
+                                            Logger.LogDebug($"Setting " + currentConfigLevel.NumberlessPlanetName + " route price to " + value);
+                                            currentConfigLevel.RoutePrice = value; //Assigns the first "pair" value as the RoutePrice for the moon
                                         }
                                     }
+                                    index++;
                                 }
-                                index++;
                             }
                         }
-                        foreach (ExtendedLevel level in PatchedContent.ExtendedLevels)
-                        {
-                            if (level.NumberlessPlanetName != "Gordion" && level.NumberlessPlanetName != "Galetry" && level.NumberlessPlanetName != "Oxyde" && level.NumberlessPlanetName != currentExtendedLevel.NumberlessPlanetName)
+                        else
+                        { //Set route price to paired moon and current to 0, set route price to others besides company to 9999
+                            Logger.LogDebug($"Ironman is a normal moon");
+                            bool foundMoonInPair = false;
+                            List<string> pairedMoonNames = new List<string>();
+                            string[] entries = IronmanMoons.Value.ToString().Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries); //E.g. 0@Exp@Vow;300@Assurance@Solace; --> 0@Exp@Vow + 0@Assurance@Solace (Each are 1 entry)
+                            foreach (string entry in entries) //For each group of moons in the config...
                             {
-                                bool matchesAMoonName = false;
-                                foreach (string moonName in pairedMoonNames)
+                                string[] pairs = entry.Split(new[] { '@' }, StringSplitOptions.RemoveEmptyEntries); //Split them, E.g. 0@Exp@Vow --> 0 + Exp + Vow 
+                                int index = 0;
+                                foreach (string pair in pairs)
                                 {
-                                    Logger.LogDebug($"Ironman current level checked is " + level.NumberlessPlanetName + " vs. " + moonName);
-                                    if (level.NumberlessPlanetName == moonName)
+                                    if (index != 0) //Skips the initial number part of the config
                                     {
-                                        Logger.LogDebug($"Ironman they are a match");
-                                        matchesAMoonName = true; //Flag for if the currently checked level is one of the paired ones from earlier, since we don't want to overwrite it
+                                        ExtendedLevel currentConfigLevel = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == WeatherRegistry.ConfigHelper.ConvertStringToLevels(pairs[index])[0]);
+                                        Logger.LogDebug($"Current level is: " + currentExtendedLevel.NumberlessPlanetName + " and Current config level is " + currentConfigLevel.NumberlessPlanetName);
+                                        if (currentExtendedLevel.NumberlessPlanetName == currentConfigLevel.NumberlessPlanetName)
+                                        { //If current level = level in this particular config entry E.g. if Exp=Exp
+                                            foundMoonInPair = true; //Set flag to true and add then loop through the config again to add each moon in it
+                                            int index2 = 0;
+                                            foreach (string pair2 in pairs)
+                                            {
+                                                if (index2 != 0)
+                                                {
+                                                    ExtendedLevel currentConfigLevel2 = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == WeatherRegistry.ConfigHelper.ConvertStringToLevels(pairs[index2])[0]);
+                                                    Logger.LogDebug($"Trying to add " + pairs[index2] + " passed as " + currentConfigLevel2);
+                                                    pairedMoonNames.Add(currentConfigLevel2.NumberlessPlanetName); //Always adds 
+                                                }
+                                                index2++;
+                                            }
+                                        }
+                                    }
+                                    index++;
+                                }
+                            }
+                            foreach (ExtendedLevel level in PatchedContent.ExtendedLevels)
+                            {
+                                if (level.NumberlessPlanetName != "Gordion" && level.NumberlessPlanetName != "Galetry" && level.NumberlessPlanetName != "Oxyde" && level.NumberlessPlanetName != currentExtendedLevel.NumberlessPlanetName)
+                                {
+                                    bool matchesAMoonName = false;
+                                    foreach (string moonName in pairedMoonNames)
+                                    {
+                                        Logger.LogDebug($"Ironman current level checked is " + level.NumberlessPlanetName + " vs. " + moonName);
+                                        if (level.NumberlessPlanetName == moonName)
+                                        {
+                                            Logger.LogDebug($"Ironman they are a match");
+                                            matchesAMoonName = true; //Flag for if the currently checked level is one of the paired ones from earlier, since we don't want to overwrite it
+                                        }
+                                        else
+                                        {
+                                            Logger.LogDebug($"Ironman they are not a match");
+                                        }
+                                    }
+                                    if (!matchesAMoonName)
+                                    {
+                                        level.RoutePrice = 9999; //Set route price to 9999
                                     }
                                     else
                                     {
-                                        Logger.LogDebug($"Ironman they are not a match");
+                                        level.RoutePrice = 0;
                                     }
-                                }
-                                if (!matchesAMoonName)
-                                {
-                                    level.RoutePrice = 9999; //Set route price to 9999
-                                }
-                                else
-                                {
-                                    level.RoutePrice = 0;
                                 }
                             }
                         }
