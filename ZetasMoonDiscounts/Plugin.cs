@@ -25,7 +25,7 @@ namespace ZetasMoonDiscounts
         private const string modGUID = "ZetaArcade.ZetasMoonDiscounts";
         public static string GUID => modGUID;
         private const string modName = "ZetasMoonDiscounts";
-        private const string modVersion = "1.4.0";
+        private const string modVersion = "1.4.1";
         private readonly Harmony harmony = new Harmony(modGUID);
         public static BepInEx.Logging.ManualLogSource Logger;
         public static ZetasMoonDiscountsBase Instance;
@@ -915,7 +915,7 @@ namespace ZetasMoonDiscounts
             [HarmonyPostfix]
             private static void AutoShipToCompanyBuilding(StartOfRound __instance)
             {
-                if (ZetasMoonDiscountsBase.Instance.IronmanAutoRoute.Value)
+                if (ZetasMoonDiscountsBase.Instance.IronmanAutoRoute.Value && ZetasMoonDiscountsBase.Instance.IronmanMode.Value)
                 {
                     ZetasMoonDiscountsBase.Instance.rerouteShip(___gameNetworkManager, true);
                 }
@@ -967,7 +967,7 @@ namespace ZetasMoonDiscounts
             [HarmonyPatch("UpdateProfitQuotaCurrentTime")]
             private static void updateProfitQuotaCurrentTimePatch()
             {
-                if (ZetasMoonDiscountsBase.Instance.IronmanAutoRoute.Value)
+                if (ZetasMoonDiscountsBase.Instance.IronmanAutoRoute.Value && ZetasMoonDiscountsBase.Instance.IronmanMode.Value)
                 {
                     ZetasMoonDiscountsBase.Instance.rerouteShip(___gameNetworkManager, false);
                 }
