@@ -46,6 +46,9 @@
       <SpecificVersion>False</SpecificVersion>
       <HintPath>lib\BepInEx.dll</HintPath>
     </Reference>
+    <Reference Include="com.sigurd.csync">
+      <HintPath>lib\com.sigurd.csync.dll</HintPath>
+    </Reference>
     <Reference Include="LethalLevelLoader, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>lib\LethalLevelLoader.dll</HintPath>
@@ -85,7 +88,10 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="BasicNetworking.cs" />
-    <Compile Include="Plugin.cs" />
+    <Compile Include="ConfigHandler.cs" />
+    <Compile Include="Main.cs" />
+    <Compile Include="Patches.cs" />
+    <Compile Include="PluginInfo.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

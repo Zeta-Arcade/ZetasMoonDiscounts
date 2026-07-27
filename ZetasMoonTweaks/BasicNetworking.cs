@@ -9,18 +9,18 @@ using ZetasMoonTweaks;
 [HarmonyPatch(typeof(NetworkManager))]
 internal static class NetworkPrefabPatch2
 {
-    //private static readonly string modGUID = ZetasMoonDiscounts.ZetasMoonDiscountsBase.modGUID;
+    //private static readonly string modGUID = ZetasMoonDiscounts.ZMTBase.modGUID;
 
     [HarmonyPostfix]
     [HarmonyPatch(nameof(NetworkManager.SetSingleton))]
     private static void RegisterPrefab()
     {
-        var prefab = new GameObject(ZetasMoonDiscountsBase.GUID + " Prefab");
+        var prefab = new GameObject(PluginInfo.modGUID + " Prefab");
         prefab.hideFlags |= HideFlags.HideAndDontSave;
         Object.DontDestroyOnLoad(prefab);
         var networkObject = prefab.AddComponent<NetworkObject>();
         var fieldInfo = typeof(NetworkObject).GetField("GlobalObjectIdHash", BindingFlags.Instance | BindingFlags.NonPublic);
-        fieldInfo!.SetValue(networkObject, GetHash(ZetasMoonDiscountsBase.GUID));
+        fieldInfo!.SetValue(networkObject, GetHash(PluginInfo.modGUID));
 
         NetworkManager.Singleton.PrefabHandler.AddNetworkPrefab(prefab);
         return;
