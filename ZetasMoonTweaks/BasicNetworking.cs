@@ -4,7 +4,7 @@ using System.Linq;
 using System.Reflection;
 using Unity.Netcode;
 using UnityEngine;
-using ZetasMoonDiscounts;
+using ZetasMoonTweaks;
 
 [HarmonyPatch(typeof(NetworkManager))]
 internal static class NetworkPrefabPatch2

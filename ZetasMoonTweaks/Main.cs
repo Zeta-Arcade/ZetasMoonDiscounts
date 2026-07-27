@@ -17,18 +17,22 @@ using UnityEngine.Rendering;
 using WeatherRegistry;
 using WeatherTweaks.Definitions;
 
-namespace ZetasMoonDiscounts
+namespace ZetasMoonTweaks
 {
     [BepInPlugin(modGUID, modName, modVersion)]
-    public class ZetasMoonDiscountsBase : BaseUnityPlugin
+    [BepInDependency(LethalLevelLoader.Plugin.ModGUID, BepInDependency.DependencyFlags.HardDependency)]
+    [BepInDependency(MrovLib.MyPluginInfo.PLUGIN_GUID, BepInDependency.DependencyFlags.HardDependency)]
+    [BepInDependency(WeatherRegistry.PluginInfo.PLUGIN_GUID, BepInDependency.DependencyFlags.HardDependency)]
+    [BepInDependency(WeatherTweaks.PluginInfo.PLUGIN_GUID, BepInDependency.DependencyFlags.HardDependency)]
+    public class ZMTBase : BaseUnityPlugin
     {
-        private const string modGUID = "ZetaArcade.ZetasMoonDiscounts";
+        private const string modGUID = "ZetaArcade.ZetasMoonTweaks";
         public static string GUID => modGUID;
-        private const string modName = "ZetasMoonDiscounts";
-        private const string modVersion = "1.4.1";
+        private const string modName = "ZetasMoonTweaks";
+        private const string modVersion = "1.0.0";
         private readonly Harmony harmony = new Harmony(modGUID);
         public static BepInEx.Logging.ManualLogSource Logger;
-        public static ZetasMoonDiscountsBase Instance;
+        public static ZMTBase Instance;
         public ConfigEntry<bool> ApplyBuyingChanges;
         public ConfigEntry<float> NormalSellRate;
         public ConfigEntry<float> ZeroDaysSelLRate;
@@ -73,11 +77,7 @@ namespace ZetasMoonDiscounts
             WeathersAndRiskLevels = Config.Bind<string>("Dynamic Risk Level Settings", "Weathers and Risk Levels", "", "A list of weathers paired with how much they should increase the difficulty rating, in the format WeatherName@DifficultyIncreaseAmount; e.g. None@0;Rainy@0.2; Be careful to not include any whitespace unless it's a part of the weather name!");
             Logger = base.Logger;
             Logger.LogInfo($"Plugin is loaded!");
-            harmony.PatchAll(typeof(ZetasMoonDiscountsBase));
-            harmony.PatchAll(typeof(TerminalPatch));
-            harmony.PatchAll(typeof(StartOfRoundPatch));
-            harmony.PatchAll(typeof(TimeOfDayPatch));
-            harmony.PatchAll(typeof(GameNetworkManagerPatch));
+            harmony.PatchAll();
         }
         public void ModifyBuyingRate()
         {
@@ -883,17 +883,30 @@ namespace ZetasMoonDiscounts
         {
             private static GameNetworkManager ___gameNetworkManager = GameNetworkManager.Instance;
 
-            [HarmonyPatch("EndOfGame")]
+            [HarmonyPatch("EndPlayersFiredSequenceClientRpc")]
             [HarmonyPostfix]
-            static void ResetHasRerouted()
+            private static void ResetHasRerouted()
             {
-                if (!___gameNetworkManager.isHostingGame)
-                {
-                    return;
-                }
-
+                Logger.LogWarning($"EndPlayersFiredSequenceClientRpc Fired!");
                 ZetasMoonDiscountsBase.Instance.hasReroutedCompany = false;
                 ZetasMoonDiscountsBase.Instance.hasReroutedMoonPair = false;
+                ExtendedLevel oxydeRef = PatchedContent.ExtendedLevels.Find(x => x.NumberlessPlanetName == "Oxyde");
+                if (oxydeRef == null) return;
+                if (!ZetasMoonDiscountsBase.Instance.IronmanMode.Value) //If not Ironman Mode
+                {
+                    if (!oxydeRef.IsRouteLocked) //If its not locked
+                    {
+                        Logger.LogWarning($"Locking Oxyde!");
+                        oxydeRef.IsRouteLocked = true;
+                        oxydeRef.IsRouteHidden = true;
+                        oxydeRef.ForceSetRoutePrice(oxydeRef.RoutePrice);
+                        Logger.LogWarning($"{oxydeRef.ModName}" + " is where Oxyde was found");
+                    }
+                    else
+                    {
+                        Logger.LogWarning($"Oxyde is already locked / Its Ironman Mode!");
+                    }
+                }
             }
             [HarmonyPatch("PassTimeToNextDay")]
             [HarmonyPostfix]

@@ -7,8 +7,8 @@
     <ProjectGuid>{051AEC3D-698C-48A7-B7BA-2445DE4E8117}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>ZetasMoonDiscounts</RootNamespace>
-    <AssemblyName>ZetasMoonDiscounts</AssemblyName>
+    <RootNamespace>ZetasMoonTweaks</RootNamespace>
+    <AssemblyName>ZetasMoonTweaks</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
