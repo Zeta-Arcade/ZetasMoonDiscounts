@@ -1,7 +1,12 @@
 ﻿using BepInEx;
 using BepInEx.Configuration;
+using GameNetcodeStuff;
 using HarmonyLib;
 using LethalLevelLoader;
+using LethalModDataLib.Attributes;
+using LethalModDataLib.Enums;
+using LethalModDataLib.Features;
+using LethalModDataLib.Helpers;
 using MrovLib;
 using MrovLib.Compatibility;
 using System;
@@ -13,6 +18,7 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using Unity.Netcode;
+using UnityEngine;
 using UnityEngine.Rendering;
 using WeatherRegistry;
 using WeatherTweaks.Definitions;
@@ -26,15 +32,17 @@ namespace ZetasMoonTweaks
     [BepInDependency(WeatherTweaks.PluginInfo.PLUGIN_GUID, BepInDependency.DependencyFlags.HardDependency)]
     [BepInDependency("com.sigurd.csync", "5.0.0")]
     [BepInDependency(Dusk.MyPluginInfo.PLUGIN_GUID, BepInDependency.DependencyFlags.HardDependency)]
+    [BepInDependency(LethalModDataLib.PluginInfo.PLUGIN_GUID, BepInDependency.DependencyFlags.HardDependency)]
+    [BepInDependency(LethalNetworkAPI.MyPluginInfo.PLUGIN_GUID, BepInDependency.DependencyFlags.HardDependency)]
     public class ZMTBase : BaseUnityPlugin
     {
         private readonly Harmony harmony = new Harmony(PluginInfo.modGUID);
         public static BepInEx.Logging.ManualLogSource Logger;
         public static ZMTBase Instance;
         internal static new ConfigHandler Config;
-        public bool hasReroutedCompany;
-        public bool hasReroutedMoonPair;
+        internal static new ModData ModDataInstance;
         public int groupCredits;
+        public bool displayedOxydeAlertForQuota;
         //internal ExtendedLevel[] AllLevels { get; private set; } = PatchedContent.ExtendedLevels.ToArray();
         private List<LevelPairedWithPrice> MoonDefaultCosts = new List<LevelPairedWithPrice>();
         private List<LevelPairedWithRisk> MoonDefaultRiskLevels = new List<LevelPairedWithRisk>();
@@ -46,8 +54,84 @@ namespace ZetasMoonTweaks
             }
             Logger = base.Logger;
             Config = new ConfigHandler(base.Config);
-            harmony.PatchAll();
+            ModDataInstance = new ModData();
+            ModDataHandler.RegisterInstance(ModDataInstance, "ZMTModDataInstance");
+            ZMTNetwork.Init();
+            try
+            {
+                harmony.PatchAll();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"Harmony patching failed: {ex}");
+            }
             Logger.LogInfo($"Plugin is loaded!");
+        }
+        public void RollNewSeed()
+        {
+            if (!NetworkManager.Singleton.IsHost) return; //Only host can generate the seed
+            if (!ModDataInstance.seedSetForQuota) //If the Seed is not set already
+            {
+                int newQuotaRoll = UnityEngine.Random.Range(0, 100);
+                //Broadcast message to everyone to change the seed
+                SetNewSeed(newQuotaRoll);
+                ZMTNetwork.SendNewSeed(newQuotaRoll);
+            }
+            else
+            {
+                Logger.LogDebug("Seed already set as: " + ModDataInstance.currentQuotaRoll);
+            }
+        }
+        public void SetNewSeed(int newQuotaRoll)
+        {
+            Logger.LogDebug("New seed set as: " + newQuotaRoll);
+            ModDataInstance.currentQuotaRoll = newQuotaRoll;
+            ModDataInstance.seedSetForQuota = true;
+            ModDataInstance.ZMTSaveData();
+        }
+        public void CheckForScrapsToDestroy()
+        {
+            if (StartOfRound.Instance.IsHost) //Host destroys all banned objects on in the ship
+            {
+                var bannedScraps = FindObjectsOfType<GrabbableObject>().Where(o => !o.isHeld && o.isInShipRoom && o.itemProperties && (o.itemProperties.itemName == "Normal Shredded Scraps" || o.itemProperties.itemName == "Sally Cube")).ToList();
+                Logger.LogInfo("Destroying " + bannedScraps.Count + " scraps when in the ship when Orbiting");
+                for (int i = 0; i < bannedScraps.Count; i++)
+                {
+                    bannedScraps[i].NetworkObject.Despawn();
+                }
+            }
+            PlayerControllerB player = StartOfRound.Instance.localPlayerController;
+            var allSlots = new Dictionary<int, GrabbableObject>();
+            if (player != null)
+            {
+                for (int i = 0; i < player.ItemSlots.Length; i++)
+                {
+                    allSlots[i] = player.ItemSlots[i];
+                }
+            }
+            foreach (var slot in allSlots.Keys)
+            {
+                if (allSlots[slot] == null) continue;
+                if (allSlots[slot].itemProperties.itemName == "Normal Shredded Scraps" || allSlots[slot].itemProperties.itemName == "Sally Cube")
+                {
+                    Logger.LogInfo($"Destroying banned scrap in slot " + slot + " scraps when Orbiting");
+                    ZMTNetwork.SendItemDestroy(StartOfRound.Instance.localPlayerController.playerClientId, slot);
+                }
+            }
+        }
+        public void DestroyScrapInSlot(ulong playerClientID, int slot)
+        {
+            if (StartOfRound.Instance == null) return;
+            PlayerControllerB player = StartOfRound.Instance.allPlayerScripts.FirstOrDefault(p => p.playerClientId == playerClientID);
+            if (player == null) return;
+            var item = player.ItemSlots[slot];
+            if (item == null) return;
+            player.carryWeight = Mathf.Clamp(player.carryWeight - (item.itemProperties.weight - 1f), 1f, 10f);
+            player.DestroyItemInSlot(slot);
+            if (HUDManager.Instance != null)
+            {
+                HUDManager.Instance.itemSlotIcons[slot].enabled = false;
+            }
         }
         public void ModifyBuyingRate()
         {
@@ -79,7 +163,7 @@ namespace ZetasMoonTweaks
                 newMoonID = 3;
                 if (StartOfRound.Instance.currentLevelID == 3)
                 {
-                    hasReroutedCompany = true;
+                    ModDataInstance.hasReroutedCompany = true;
                 }
             }
             else
@@ -87,7 +171,7 @@ namespace ZetasMoonTweaks
                 newMoonID = GetNextQuotaMoonID();
                 if (StartOfRound.Instance.currentLevelID == newMoonID)
                 {
-                    hasReroutedMoonPair = true;
+                    ModDataInstance.hasReroutedMoonPair = true;
                 }
             }
             if (newMoonID == -1)
@@ -96,20 +180,28 @@ namespace ZetasMoonTweaks
             }
             if (toCompany)
             {
-                if (StartOfRound.Instance.CanChangeLevels() && TimeOfDay.Instance.daysUntilDeadline == 0 && hasReroutedCompany == false && Config.IronmanAutoRoute.Value && TimeOfDay.Instance.quotaFulfilled < TimeOfDay.Instance.profitQuota)
+                if (StartOfRound.Instance.CanChangeLevels() && !ModDataInstance.hasReroutedCompany && TimeOfDay.Instance.daysUntilDeadline == 0 && Config.AutoCompanyBuilding.Value && TimeOfDay.Instance.quotaFulfilled < TimeOfDay.Instance.profitQuota)
                 {
                     StartOfRound.Instance.ChangeLevelServerRpc(newMoonID, groupCredits);
                     StartOfRound.Instance.ChangeLevel(newMoonID);
-                    hasReroutedCompany = true;
+                    ModDataInstance.hasReroutedCompany = true;
+                }
+                else
+                {
+                    ModDataInstance.hasReroutedCompany = false;
                 }
             }
-            else if (StartOfRound.Instance.CanChangeLevels() && hasReroutedMoonPair == false && Config.IronmanAutoRoute.Value && TimeOfDay.Instance.quotaFulfilled < TimeOfDay.Instance.profitQuota)
+            else if (StartOfRound.Instance.CanChangeLevels() && !ModDataInstance.hasReroutedMoonPair && Config.IronmanAutoRoute.Value && TimeOfDay.Instance.quotaFulfilled < TimeOfDay.Instance.profitQuota)
             {
-                // Should probably set the route price to 0 prior to routing, so that it doesnt charge people with the right configs
                 StartOfRound.Instance.ChangeLevelServerRpc(newMoonID, groupCredits);
-                StartOfRound.Instance.ChangeLevel(newMoonID); //Needs to be the level ID of an the next pair's first moon
-                hasReroutedMoonPair = true;
+                StartOfRound.Instance.ChangeLevel(newMoonID); 
+                ModDataInstance.hasReroutedMoonPair = true;
             }
+            else
+            {
+                ModDataInstance.hasReroutedMoonPair = false;
+            }
+            ModDataInstance.ZMTSaveData();
         }
         public int GetNextQuotaMoonID()
         {
@@ -171,6 +263,130 @@ namespace ZetasMoonTweaks
             }
             return newID;
         }
+        public void SetOxydeCostFromConfigs()
+        {
+            bool quotaIsEven;
+            int currentQuotaNo = TimeOfDay.Instance.quotaFulfilled + 1;
+            ExtendedLevel oxydeRef = PatchedContent.ExtendedLevels.Find(x => x.NumberlessPlanetName == "Oxyde");
+            if (oxydeRef == null)
+            {
+                Logger.LogWarning("Couldnt find Oxyde, no changes will be made to the price");
+                return;
+            }
+            if (currentQuotaNo % 2 == 0)
+            {
+                quotaIsEven = true;
+            }
+            else
+            {
+                quotaIsEven = false;
+            }
+            switch (Config.OxydeLockMode.Value)
+            {
+                case ConfigHandler.OxydeLockModes.None:
+                    SetOxydeCostFromDeadline(oxydeRef);
+                    break;
+                case ConfigHandler.OxydeLockModes.EvenOnly:
+                    if (quotaIsEven)
+                    {
+                        SetOxydeCostFromDeadline(oxydeRef);
+                        OxydeHUDAlert(true, "Oxyde has been unlocked for this Quota, since the Quota # is an Even Number!");
+                    }
+                    else
+                    {
+                        oxydeRef.RoutePrice = 9999;
+                        OxydeHUDAlert(true, "Oxyde has been locked for this Quota, since the Quota # isn't an Even Number!");
+                    }
+                    break;
+                case ConfigHandler.OxydeLockModes.OddOnly:
+                    if (!quotaIsEven)
+                    {
+                        SetOxydeCostFromDeadline(oxydeRef);
+                        OxydeHUDAlert(true, "Oxyde has been unlocked for this Quota, since the Quota # is an Odd Number!");
+                    }
+                    else
+                    {
+                        oxydeRef.RoutePrice = 9999;
+                        OxydeHUDAlert(true, "Oxyde has been locked for this Quota, since the Quota # isn't an Odd Number!");
+                    }
+                    break;
+                case ConfigHandler.OxydeLockModes.Threshold:
+                    if (TimeOfDay.Instance.profitQuota >= Config.OxydeUnlockThreshold.Value)
+                    {
+                        SetOxydeCostFromDeadline(oxydeRef);
+                        OxydeHUDAlert(false, "Oxyde has been unlocked for this Quota, since the Quota is above $" + Config.OxydeUnlockThreshold.Value + "!");
+                    }
+                    else
+                    {
+                        oxydeRef.RoutePrice = 9999;
+                        OxydeHUDAlert(true, "Oxyde has been locked for this Quota, since the Quota isn't at $" + Config.OxydeUnlockThreshold.Value + " yet!");
+                    }
+                    break;
+                case ConfigHandler.OxydeLockModes.Rng:
+                    if (!ModDataInstance.seedSetForQuota)
+                    {
+                        oxydeRef.RoutePrice = 9999;
+                        RollNewSeed();
+                    }
+                    else
+                    {
+                        if (ModDataInstance.currentQuotaRoll <= Config.OxydeUnlockChance.Value)
+                        {
+                            SetOxydeCostFromDeadline(oxydeRef);
+                            OxydeHUDAlert(false, "Oxyde has been unlocked due to good luck for this Quota! (A " + Config.OxydeUnlockChance.Value + "% chance of happening!)");
+                        }
+                        else
+                        {
+                            oxydeRef.RoutePrice = 9999;
+                            int badLuckChance = 100 - Config.OxydeUnlockChance.Value;
+                            OxydeHUDAlert(true, "Oxyde has been locked due to bad luck for this Quota! (A " + badLuckChance + "% chance of happening!)");
+                        }
+                    }
+                    break;
+            }
+        }
+        public void OxydeHUDAlert(bool denied, string reason)
+        {
+            if (HUDManager.Instance != null && StartOfRound.Instance != null)
+            {
+                if (!displayedOxydeAlertForQuota && StartOfRound.Instance.localPlayerController.isPlayerControlled && StartOfRound.Instance.inShipPhase)
+                {
+                    displayedOxydeAlertForQuota = true;
+                    HUDManager.Instance.DisplayTip("Oxyde Update", reason, denied);
+                }
+            }
+        }
+        public void SetOxydeCostFromDeadline(ExtendedLevel OxydeRef)
+        {
+            //Sets the cost based on how many days are left to the Deadline
+            int desiredCost = -1;
+            switch (TimeOfDay.Instance.daysUntilDeadline)
+            {
+                case 0:
+                    desiredCost = Config.ZeroDaysOxydeCost;
+                    break;
+                case 1:
+                    desiredCost = Config.OneDayOxydeCost;
+                    break;
+                case 2:
+                    desiredCost = Config.TwoDayOxydeCost;
+                    break;
+                case 3:
+                    desiredCost = Config.ThreeDayOxydeCost;
+                    break;
+                default:
+                    desiredCost = Config.ThreeDayOxydeCost;
+                    break;
+            }
+            if (desiredCost > -1)
+            {
+                OxydeRef.RoutePrice = desiredCost;
+            }
+            else
+            {
+                OxydeRef.RoutePrice = MoonDefaultCosts.Find(x => x.Level == OxydeRef).OriginalPrice;
+            }
+        }
         public void CalculateMoonPrices()
         {
             if (Config.ApplyDiscountChanges.Value || Config.IronmanMode.Value) //If Discounts on OR in Ironman Mode
@@ -192,19 +408,19 @@ namespace ZetasMoonTweaks
                     {
                         foreach (ExtendedLevel level in PatchedContent.ExtendedLevels)
                         {
-                            level.RoutePrice = MoonDefaultCosts.Find(x => x.Level == level).OriginalPrice; //Set all prices back to default
+                            level.RoutePrice = MoonDefaultCosts.Find(x => x.Level == level).OriginalPrice; //Set all prices back to default to start
                         }
                         if (currentExtendedLevel.NumberlessPlanetName == "Gordion" || currentExtendedLevel.NumberlessPlanetName == "Galetry" || currentExtendedLevel.NumberlessPlanetName == "Oxyde" || currentExtendedLevel.RoutePrice == 0)
                         {
                             //CURRENT moon is free/company so dont bother doing discounts
-                            Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + " is free/company/oxyde, so no discounts will be applied");
+                            Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + " is free/company/oxyde, so no discounts will be applied except for Oxyde Route Cost changes");
                         }
                         else
                         {
                             Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + " is not free/company/oxyde, so discounts will be applied");
                             foreach (ExtendedLevel level in PatchedContent.ExtendedLevels) //Looping through every level
                             {
-                                if (level.NumberlessPlanetName == "Gordion" || level.NumberlessPlanetName == "Galetry" || level.NumberlessPlanetName == "Oxyde" || level.NumberlessPlanetName == currentExtendedLevel.NumberlessPlanetName || level.RoutePrice == 0)
+                                if (level.NumberlessPlanetName == "Gordion" || level.NumberlessPlanetName == "Oxyde" || level.NumberlessPlanetName == "Galetry" || level.NumberlessPlanetName == currentExtendedLevel.NumberlessPlanetName || level.RoutePrice == 0)
                                 {
                                     // "Other moon" is the same moon, or free or company, so keep route prices to them unchanged
                                     level.RoutePrice = MoonDefaultCosts.Find(x => x.Level == level).OriginalPrice;
@@ -252,7 +468,6 @@ namespace ZetasMoonTweaks
                     {
                         // Ironman Mode :KaguyaFace:
                         Logger.LogDebug($"Ironman Mode Detected");
-
                         if (currentExtendedLevel.NumberlessPlanetName == "Gordion" || currentExtendedLevel.NumberlessPlanetName == "Galetry" || currentExtendedLevel.NumberlessPlanetName == "Oxyde")
                         {
                             Logger.LogDebug($"Ironman Is Company");
@@ -467,8 +682,8 @@ namespace ZetasMoonTweaks
                             // Get current weather, find associated float increase or use default if cant be found
                             // Add both values together
                             bool isCombined;
-                            float newRiskLevelValue = ConvertRiskLevelToFloat(level.SelectableLevel.riskLevel) + GetWeatherRiskLevelFloat(WeatherManager.GetCurrentWeather(level.SelectableLevel), out isCombined);
-                            level.SelectableLevel.riskLevel = ConvertFloatToRiskLevel(newRiskLevelValue);
+                            float newRiskLevelValue = Utils.ConvertRiskLevelToFloat(level.SelectableLevel.riskLevel) + GetWeatherRiskLevelFloat(WeatherManager.GetCurrentWeather(level.SelectableLevel), out isCombined);
+                            level.SelectableLevel.riskLevel = Utils.ConvertFloatToRiskLevel(newRiskLevelValue);
                             if (isCombined)
                             {
                                 level.SelectableLevel.riskLevel += "?";
@@ -480,166 +695,7 @@ namespace ZetasMoonTweaks
                 }
             }
         }
-        public float SwapLetterForRiskFloat(char target)
-        {
-            float output = 0f;
-            switch (target)
-            {
-                case 'X':
-                    output = 10;
-                    break;
-                case 'S':
-                    output = 6;
-                    break;
-                case 'A':
-                    output = 5;
-                    break;
-                case 'B':
-                    output = 4;
-                    break;
-                case 'C':
-                    output = 3;
-                    break;
-                case 'D':
-                    output = 2;
-                    break;
-                case 'E':
-                    output = 1;
-                    break;
-                case 'F':
-                    output = 0;
-                    break;
-                default:
-                    output = 0;
-                    break;
-            }
-            return output;
-        }
-        public float SwapSymbolsForRiskFloat(string target)
-        {
-            float output = 0f;
-            switch (target)
-            {
-                case "-":
-                    output = 0.31f;
-                    break;
-                case "+":
-                    output = 0.66f;
-                    break;
-                case "++":
-                    output = 0.76f;
-                    break;
-                case "*":
-                    output = 0.86f;
-                    break;
-                default:
-                    output = 0.5f;
-                    break;
-            }
-            return output;
-        }
-        public string SwapIntForRiskLetter(int riskInt)
-        {
-            string output = "";
-            if (riskInt > 10)
-            {
-                output = "X";
-            }
-            else if (riskInt > 6)
-            {
-                output = "S";
-            }
-            else
-            {
-                switch (riskInt)
-                {
-                    case 0:
-                        output = "F";
-                        break;
-                    case 1:
-                        output = "E";
-                        break;
-                    case 2:
-                        output = "D";
-                        break;
-                    case 3:
-                        output = "C";
-                        break;
-                    case 4:
-                        output = "B";
-                        break;
-                    case 5:
-                        output = "A";
-                        break;
-                    case 6:
-                        output = "S";
-                        break;
-                    case 10:
-                        output = "X";
-                        break;
-                    default:
-                        output = "?";
-                        break;
-                }
-            }
-            return output;
-        }
-        public string SwapFloatDecimalsForRiskSymbol(float riskFloat)
-        {
-            string output = "";
-            // Take float, e.g. 9.76
-            float isolatedDecimals = riskFloat - (int)riskFloat; // E.g. 9.76 - 9 = 0.76
-            double isolatedDecRounded = Math.Round(isolatedDecimals, 2);
-            if (isolatedDecRounded >= 0.85)
-            {
-                output = "*";
-            }
-            else if (isolatedDecRounded >= 0.75)
-            {
-                output = "++";
-            }
-            else if (isolatedDecRounded >= 0.65)
-            {
-                output = "+";
-            }
-            else if (isolatedDecRounded >= 0.3)
-            {
-                output = "";
-            }
-            else
-            {
-                output = "-";
-            }
-            return output;
-        }
-        public float ConvertRiskLevelToFloat(string riskLevel)
-        {
-            float output = 0;
-            float baseAmount = 0;
-            float decimalAmount = 0;
-            char[] characters = riskLevel.ToCharArray();
-            baseAmount = SwapLetterForRiskFloat(characters[0]);
-            string riskLevelSymbols = riskLevel.TrimStart(characters[0]);
-            if (riskLevelSymbols.Length > 0)
-            {
-                decimalAmount = SwapSymbolsForRiskFloat(riskLevelSymbols);
-            }
-            else
-            {
-                decimalAmount = 0.5f;
-            }
-            Logger.LogDebug($"Converted " + riskLevel + " to " + baseAmount + " + " + decimalAmount);
-            output = baseAmount + decimalAmount;
-            return output;
-        }
-        public string ConvertFloatToRiskLevel(float floatRiskLevel)
-        {
-            string output = "";
-            string part1 = SwapIntForRiskLetter((int)floatRiskLevel); //Doesn't round, just cuts off the decimal part
-            string part2 = SwapFloatDecimalsForRiskSymbol(floatRiskLevel);
-            output = part1 + part2;
-            return output;
-        }
+
         public float GetWeatherRiskLevelFloat(Weather weather, out bool isCombined)
         {
             isCombined = false;

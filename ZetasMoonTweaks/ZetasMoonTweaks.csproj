@@ -46,12 +46,24 @@
       <SpecificVersion>False</SpecificVersion>
       <HintPath>lib\BepInEx.dll</HintPath>
     </Reference>
+    <Reference Include="com.github.teamxiaolan.dawnlib">
+      <HintPath>lib\com.github.teamxiaolan.dawnlib.dll</HintPath>
+    </Reference>
+    <Reference Include="com.github.teamxiaolan.dawnlib.dusk">
+      <HintPath>lib\com.github.teamxiaolan.dawnlib.dusk.dll</HintPath>
+    </Reference>
     <Reference Include="com.sigurd.csync">
       <HintPath>lib\com.sigurd.csync.dll</HintPath>
     </Reference>
     <Reference Include="LethalLevelLoader, Version=1.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>lib\LethalLevelLoader.dll</HintPath>
+    </Reference>
+    <Reference Include="LethalNetworkAPI">
+      <HintPath>lib\LethalNetworkAPI.dll</HintPath>
+    </Reference>
+    <Reference Include="MaxWasUnavailable.LethalModDataLib">
+      <HintPath>lib\MaxWasUnavailable.LethalModDataLib.dll</HintPath>
     </Reference>
     <Reference Include="MrovLib, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
@@ -77,6 +89,9 @@
       <SpecificVersion>False</SpecificVersion>
       <HintPath>lib\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>lib\UnityEngine.UI.dll</HintPath>
+    </Reference>
     <Reference Include="WeatherRegistry, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>lib\WeatherRegistry.dll</HintPath>
@@ -90,9 +105,12 @@
     <Compile Include="BasicNetworking.cs" />
     <Compile Include="ConfigHandler.cs" />
     <Compile Include="Main.cs" />
+    <Compile Include="ModData.cs" />
     <Compile Include="Patches.cs" />
     <Compile Include="PluginInfo.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Utils.cs" />
+    <Compile Include="ZMTNetwork.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

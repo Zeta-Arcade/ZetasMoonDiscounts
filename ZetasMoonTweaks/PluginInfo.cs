@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace ZetasMoonTweaks
 {
-    internal class PluginInfo
+    internal static class PluginInfo
     {
         public const string modGUID = "ZetaArcade.ZetasMoonTweaks";
         public const string modName = "ZetasMoonTweaks";
