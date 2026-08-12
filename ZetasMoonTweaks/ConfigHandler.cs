@@ -34,6 +34,7 @@ namespace ZetasMoonTweaks
         [SyncedEntryField] public SyncedEntry<string> WeathersAndRiskLevels;
         // Oxyde
         [SyncedEntryField] public SyncedEntry<bool> RelockOxydeOnEject;
+        [SyncedEntryField] public SyncedEntry<bool> OxydeTabletForceUnlocksOxyde;
         [SyncedEntryField] public SyncedEntry<OxydeLockModes> OxydeLockMode;
         [SyncedEntryField] public SyncedEntry<int> OxydeUnlockThreshold;
         [SyncedEntryField] public SyncedEntry<int> OxydeUnlockChance;
@@ -70,6 +71,7 @@ namespace ZetasMoonTweaks
             DefaultWeatherRiskLevelIncrease = cfg.BindSyncedEntry<float>("Dynamic Risk Level Settings", "Default Weather Risk Level Increase", 1f, "The default difficulty increase for a weather where unspecified below.");
             WeathersAndRiskLevels = cfg.BindSyncedEntry<string>("Dynamic Risk Level Settings", "Weathers and Risk Levels", "", "A list of weathers paired with how much they should increase the difficulty rating, in the format WeatherName@DifficultyIncreaseAmount; e.g. None@0;Rainy@0.2; Be careful to not include any whitespace unless it's a part of the weather name!");
             RelockOxydeOnEject = cfg.BindSyncedEntry<bool>("Oxyde Settings", "Relock Oxyde on Eject", true, "If true, then when an ejection occurs, Oxyde will be Locked again for the save file. This is a bug fix for CodeRebirth.");
+            OxydeTabletForceUnlocksOxyde = cfg.BindSyncedEntry<bool>("Oxyde Settings", "Oxyde Tablet Force Unlocks Oxyde", true, "If true, then when an Oxyde Tablet is used, Oxyde will be guaranteed to be unlocked for this Quota, regardless of the Lock Mode, making the Tablet still useful after Oxyde is initially discovered.");
             DestroyOxydeSellScrapsInOrbit = cfg.BindSyncedEntry<bool>("Oxyde Settings", "Destroy Selling Scraps when leaving", true, "If true, then when the ship is leaving Oxyde, any Shredded Scraps / Compacted Cubes will be destroyed to prevent bringing them into orbit, which prevents cheesing the sell process by amassing these scraps early.");
             OxydeLockMode = cfg.BindSyncedEntry<OxydeLockModes>("Oxyde Settings", "Oxyde Lock Mode", OxydeLockModes.None, "Different ways to control when Oxyde is 'Locked' by setting the Route cost to 99999. 'None' = No changes, 'OddOnly' / 'EvenOnly' = Oxyde will only be available on Odd/Even numbered Quotas respectively, 'Threshold' = The quota must reach a certain threshold for Oxyde to become available, 'Rng' = Oxyde has a random chance to be available each Quota.");
             OxydeUnlockThreshold = cfg.BindSyncedEntry<int>("Oxyde Settings", "Oxyde Unlock Threshold", 3000, "How high the Quota should be before Oxyde becomes available, if 'Oxyde Lock Mode' is set to 'Threshold'");

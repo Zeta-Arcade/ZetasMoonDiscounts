@@ -1,5 +1,8 @@
 ﻿using BepInEx;
 using BepInEx.Configuration;
+using Dawn;
+using Dawn.Utils;
+using Dusk;
 using GameNetcodeStuff;
 using HarmonyLib;
 using LethalLevelLoader;
@@ -43,6 +46,7 @@ namespace ZetasMoonTweaks
         internal static new ModData ModDataInstance;
         public int groupCredits;
         public bool displayedOxydeAlertForQuota;
+        public bool hasRoutedForThisQuota = false;
         //internal ExtendedLevel[] AllLevels { get; private set; } = PatchedContent.ExtendedLevels.ToArray();
         private List<LevelPairedWithPrice> MoonDefaultCosts = new List<LevelPairedWithPrice>();
         private List<LevelPairedWithRisk> MoonDefaultRiskLevels = new List<LevelPairedWithRisk>();
@@ -67,6 +71,7 @@ namespace ZetasMoonTweaks
             }
             Logger.LogInfo($"Plugin is loaded!");
         }
+        private static readonly PropertyInfo CostProperty = AccessTools.Property(typeof(DawnPurchaseInfo), "Cost");
         public void RollNewSeed()
         {
             if (!NetworkManager.Singleton.IsHost) return; //Only host can generate the seed
@@ -184,7 +189,9 @@ namespace ZetasMoonTweaks
                 {
                     StartOfRound.Instance.ChangeLevelServerRpc(newMoonID, groupCredits);
                     StartOfRound.Instance.ChangeLevel(newMoonID);
+                    hasRoutedForThisQuota = true;
                     ModDataInstance.hasReroutedCompany = true;
+                    ModDataInstance.ZMTSaveData();
                 }
                 else
                 {
@@ -194,14 +201,44 @@ namespace ZetasMoonTweaks
             else if (StartOfRound.Instance.CanChangeLevels() && !ModDataInstance.hasReroutedMoonPair && Config.IronmanAutoRoute.Value && TimeOfDay.Instance.quotaFulfilled < TimeOfDay.Instance.profitQuota)
             {
                 StartOfRound.Instance.ChangeLevelServerRpc(newMoonID, groupCredits);
-                StartOfRound.Instance.ChangeLevel(newMoonID); 
+                StartOfRound.Instance.ChangeLevel(newMoonID);
                 ModDataInstance.hasReroutedMoonPair = true;
+                ModDataInstance.ZMTSaveData();
             }
             else
             {
                 ModDataInstance.hasReroutedMoonPair = false;
             }
-            ModDataInstance.ZMTSaveData();
+        }
+        public void SetDawnPrice(ExtendedLevel levelRef, int newPrice)
+        {
+            Logger.LogDebug($"Trying to set DawnPrice of " + levelRef.NumberlessPlanetName + " to " + newPrice);
+            try
+            {
+                DawnMoonInfo? moonInfoTest = levelRef.SelectableLevel.GetDawnInfo();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex);
+            }
+            DawnMoonInfo? moonInfo = levelRef.SelectableLevel.GetDawnInfo();
+            if (moonInfo == null) return;
+            try
+            {
+                CostProperty.SetValue(moonInfo.DawnPurchaseInfo, new SimpleProvider<int>(newPrice));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex);
+            }
+            if (moonInfo.RouteNode != null)
+            {
+                moonInfo.RouteNode.itemCost = newPrice;
+            }
+            if (moonInfo.ReceiptNode != null)
+            {
+                moonInfo.ReceiptNode.itemCost = newPrice;
+            }
         }
         public int GetNextQuotaMoonID()
         {
@@ -263,6 +300,12 @@ namespace ZetasMoonTweaks
             }
             return newID;
         }
+        public void UpdateOxydeTabletStatus(bool newUnlockStatus)
+        {
+            ModDataInstance.isOxydeOveride = newUnlockStatus;
+            displayedOxydeAlertForQuota = false;
+            ModDataInstance.ZMTSaveData();
+        }
         public void SetOxydeCostFromConfigs()
         {
             bool quotaIsEven;
@@ -281,68 +324,81 @@ namespace ZetasMoonTweaks
             {
                 quotaIsEven = false;
             }
-            switch (Config.OxydeLockMode.Value)
+            if (ModDataInstance.isOxydeOveride)
             {
-                case ConfigHandler.OxydeLockModes.None:
-                    SetOxydeCostFromDeadline(oxydeRef);
-                    break;
-                case ConfigHandler.OxydeLockModes.EvenOnly:
-                    if (quotaIsEven)
-                    {
+                SetOxydeCostFromDeadline(oxydeRef);
+                OxydeHUDAlert(true, "Oxyde has been unlocked for this Quota, thanks to the Oxyde Tablet!");
+            }
+            else
+            {
+                switch (Config.OxydeLockMode.Value)
+                {
+                    case ConfigHandler.OxydeLockModes.None:
                         SetOxydeCostFromDeadline(oxydeRef);
-                        OxydeHUDAlert(true, "Oxyde has been unlocked for this Quota, since the Quota # is an Even Number!");
-                    }
-                    else
-                    {
-                        oxydeRef.RoutePrice = 9999;
-                        OxydeHUDAlert(true, "Oxyde has been locked for this Quota, since the Quota # isn't an Even Number!");
-                    }
-                    break;
-                case ConfigHandler.OxydeLockModes.OddOnly:
-                    if (!quotaIsEven)
-                    {
-                        SetOxydeCostFromDeadline(oxydeRef);
-                        OxydeHUDAlert(true, "Oxyde has been unlocked for this Quota, since the Quota # is an Odd Number!");
-                    }
-                    else
-                    {
-                        oxydeRef.RoutePrice = 9999;
-                        OxydeHUDAlert(true, "Oxyde has been locked for this Quota, since the Quota # isn't an Odd Number!");
-                    }
-                    break;
-                case ConfigHandler.OxydeLockModes.Threshold:
-                    if (TimeOfDay.Instance.profitQuota >= Config.OxydeUnlockThreshold.Value)
-                    {
-                        SetOxydeCostFromDeadline(oxydeRef);
-                        OxydeHUDAlert(false, "Oxyde has been unlocked for this Quota, since the Quota is above $" + Config.OxydeUnlockThreshold.Value + "!");
-                    }
-                    else
-                    {
-                        oxydeRef.RoutePrice = 9999;
-                        OxydeHUDAlert(true, "Oxyde has been locked for this Quota, since the Quota isn't at $" + Config.OxydeUnlockThreshold.Value + " yet!");
-                    }
-                    break;
-                case ConfigHandler.OxydeLockModes.Rng:
-                    if (!ModDataInstance.seedSetForQuota)
-                    {
-                        oxydeRef.RoutePrice = 9999;
-                        RollNewSeed();
-                    }
-                    else
-                    {
-                        if (ModDataInstance.currentQuotaRoll <= Config.OxydeUnlockChance.Value)
+                        break;
+                    case ConfigHandler.OxydeLockModes.EvenOnly:
+                        if (quotaIsEven)
                         {
                             SetOxydeCostFromDeadline(oxydeRef);
-                            OxydeHUDAlert(false, "Oxyde has been unlocked due to good luck for this Quota! (A " + Config.OxydeUnlockChance.Value + "% chance of happening!)");
+                            OxydeHUDAlert(true, "Oxyde has been unlocked for this Quota, since the Quota # is an Even Number!");
                         }
                         else
                         {
                             oxydeRef.RoutePrice = 9999;
-                            int badLuckChance = 100 - Config.OxydeUnlockChance.Value;
-                            OxydeHUDAlert(true, "Oxyde has been locked due to bad luck for this Quota! (A " + badLuckChance + "% chance of happening!)");
+                            SetDawnPrice(oxydeRef, 9999);
+                            OxydeHUDAlert(true, "Oxyde has been locked for this Quota, since the Quota # isn't an Even Number!");
                         }
-                    }
-                    break;
+                        break;
+                    case ConfigHandler.OxydeLockModes.OddOnly:
+                        if (!quotaIsEven)
+                        {
+                            SetOxydeCostFromDeadline(oxydeRef);
+                            OxydeHUDAlert(true, "Oxyde has been unlocked for this Quota, since the Quota # is an Odd Number!");
+                        }
+                        else
+                        {
+                            oxydeRef.RoutePrice = 9999;
+                            SetDawnPrice(oxydeRef, 9999);
+                            OxydeHUDAlert(true, "Oxyde has been locked for this Quota, since the Quota # isn't an Odd Number!");
+                        }
+                        break;
+                    case ConfigHandler.OxydeLockModes.Threshold:
+                        if (TimeOfDay.Instance.profitQuota >= Config.OxydeUnlockThreshold.Value)
+                        {
+                            SetOxydeCostFromDeadline(oxydeRef);
+                            OxydeHUDAlert(false, "Oxyde has been unlocked for this Quota, since the Quota is above $" + Config.OxydeUnlockThreshold.Value + "!");
+                        }
+                        else
+                        {
+                            oxydeRef.RoutePrice = 9999;
+                            SetDawnPrice(oxydeRef, 9999);
+                            OxydeHUDAlert(true, "Oxyde has been locked for this Quota, since the Quota isn't at $" + Config.OxydeUnlockThreshold.Value + " yet!");
+                        }
+                        break;
+                    case ConfigHandler.OxydeLockModes.Rng:
+                        if (!ModDataInstance.seedSetForQuota)
+                        {
+                            oxydeRef.RoutePrice = 9999;
+                            SetDawnPrice(oxydeRef, 9999);
+                            RollNewSeed();
+                        }
+                        else
+                        {
+                            if (ModDataInstance.currentQuotaRoll <= Config.OxydeUnlockChance.Value)
+                            {
+                                SetOxydeCostFromDeadline(oxydeRef);
+                                OxydeHUDAlert(false, "Oxyde has been unlocked due to good luck for this Quota! (A " + Config.OxydeUnlockChance.Value + "% chance of happening!)");
+                            }
+                            else
+                            {
+                                oxydeRef.RoutePrice = 9999;
+                                SetDawnPrice(oxydeRef, 9999);
+                                int badLuckChance = 100 - Config.OxydeUnlockChance.Value;
+                                OxydeHUDAlert(true, "Oxyde has been locked due to bad luck for this Quota! (A " + badLuckChance + "% chance of happening!)");
+                            }
+                        }
+                        break;
+                }
             }
         }
         public void OxydeHUDAlert(bool denied, string reason)
@@ -381,10 +437,12 @@ namespace ZetasMoonTweaks
             if (desiredCost > -1)
             {
                 OxydeRef.RoutePrice = desiredCost;
+                SetDawnPrice(OxydeRef, desiredCost);
             }
             else
             {
                 OxydeRef.RoutePrice = MoonDefaultCosts.Find(x => x.Level == OxydeRef).OriginalPrice;
+                SetDawnPrice(OxydeRef, OxydeRef.RoutePrice);
             }
         }
         public void CalculateMoonPrices()
@@ -402,13 +460,13 @@ namespace ZetasMoonTweaks
                     if (!StartOfRound.Instance) return;
                     if (!StartOfRound.Instance.currentLevel) return;
                     SelectableLevel currentLevel = StartOfRound.Instance.currentLevel;
-                    Logger.LogDebug($"Got current level ref");
                     ExtendedLevel currentExtendedLevel = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == currentLevel);
                     if (!Config.IronmanMode.Value) //If in normal mode
                     {
                         foreach (ExtendedLevel level in PatchedContent.ExtendedLevels)
                         {
                             level.RoutePrice = MoonDefaultCosts.Find(x => x.Level == level).OriginalPrice; //Set all prices back to default to start
+                            SetDawnPrice(level, level.RoutePrice);
                         }
                         if (currentExtendedLevel.NumberlessPlanetName == "Gordion" || currentExtendedLevel.NumberlessPlanetName == "Galetry" || currentExtendedLevel.NumberlessPlanetName == "Oxyde" || currentExtendedLevel.RoutePrice == 0)
                         {
@@ -424,6 +482,7 @@ namespace ZetasMoonTweaks
                                 {
                                     // "Other moon" is the same moon, or free or company, so keep route prices to them unchanged
                                     level.RoutePrice = MoonDefaultCosts.Find(x => x.Level == level).OriginalPrice;
+                                    SetDawnPrice(level, level.RoutePrice);
                                 }
                                 else
                                 {
@@ -433,6 +492,7 @@ namespace ZetasMoonTweaks
                                     if (CostDif >= Config.FreeThreshold.Value && level.RoutePrice < Config.FreeThresholdCap.Value || CostDif >= 3500) // E.g. Checks the other moon is cheap enough but also isn't at the cap
                                     {
                                         level.RoutePrice = 0; //Makes it free
+                                        SetDawnPrice(level, 0);
                                         Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + "(" + currentExtendedLevel.RoutePrice + ")" + " --> " + level.NumberlessPlanetName + "(" + level.RoutePrice + ")" + " Meets the free discount criteria");
                                     }
                                     else if (level.RoutePrice <= Config.DowngradeCost.Value) //Else, if the route price is lower than the downgrade price, just keep it the same
@@ -443,6 +503,7 @@ namespace ZetasMoonTweaks
                                     else if (level.RoutePrice <= currentExtendedLevel.RoutePrice) //Else, if it is still cheaper or same price, then make it cost 50 to route to
                                     {
                                         level.RoutePrice = Config.DowngradeCost.Value; //Makes discounted, default 50
+                                        SetDawnPrice(level, level.RoutePrice);
                                         Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + "(" + currentExtendedLevel.RoutePrice + ")" + " --> " + level.NumberlessPlanetName + "(" + level.RoutePrice + ")" + " Meets the downgrade discount criteria");
                                     }
                                     else
@@ -451,12 +512,14 @@ namespace ZetasMoonTweaks
                                         if (CostDif <= Config.UpgradeThreshold.Value)
                                         {
                                             level.RoutePrice = CostDif; //Upgrade price is just the CostDif between the 2 moons
+                                            SetDawnPrice(level, level.RoutePrice);
                                             Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + "(" + currentExtendedLevel.RoutePrice + ")" + " --> " + level.NumberlessPlanetName + "(" + level.RoutePrice + ")" + " Meets the upgrade discount criteria");
                                         }
                                         else
                                         {
                                             //The moon does not meet any of the criteria, so it's cost must be set back to default
                                             level.RoutePrice = MoonDefaultCosts.Find(x => x.Level == level).OriginalPrice;
+                                            SetDawnPrice(level, level.RoutePrice);
                                             Logger.LogDebug($"Current moon " + currentExtendedLevel.NumberlessPlanetName + "(" + currentExtendedLevel.RoutePrice + ")" + " --> " + level.NumberlessPlanetName + "(" + level.RoutePrice + ")" + " Does not meet any discount criteria");
                                         }
                                     }
@@ -522,10 +585,12 @@ namespace ZetasMoonTweaks
                                                             if (Config.IronmanAutoRoute.Value)
                                                             {
                                                                 currentConfigLevel.RoutePrice = 0;
+                                                                SetDawnPrice(currentConfigLevel, currentConfigLevel.RoutePrice);
                                                             }
                                                             else
                                                             {
                                                                 currentConfigLevel.RoutePrice = value; //Assigns the first "pair" value as the RoutePrice for the moon
+                                                                SetDawnPrice(currentConfigLevel, currentConfigLevel.RoutePrice);
                                                             }
                                                         }
                                                         else
@@ -533,12 +598,14 @@ namespace ZetasMoonTweaks
                                                             currentConfigLevel.IsRouteLocked = true;
                                                             currentConfigLevel.IsRouteHidden = true;
                                                             currentConfigLevel.RoutePrice = 9999;
+                                                            SetDawnPrice(currentConfigLevel, currentConfigLevel.RoutePrice);
                                                             Logger.LogDebug($"Moon " + currentConfigLevel.NumberlessPlanetName + " is locked because it is from pair " + pairNo + " and the current quota is " + currentQuotaNo);
                                                         }
                                                     }
                                                     else
                                                     {
                                                         currentConfigLevel.RoutePrice = value; //Assigns the first "pair" value as the RoutePrice for the moon
+                                                        SetDawnPrice(currentConfigLevel, currentConfigLevel.RoutePrice);
                                                         currentConfigLevel.IsRouteLocked = false;
                                                         currentConfigLevel.IsRouteHidden = false;
                                                     }
@@ -636,12 +703,14 @@ namespace ZetasMoonTweaks
                                     if (!matchesAMoonName)
                                     {
                                         level.RoutePrice = 9999; //Set route price to 9999
+                                        SetDawnPrice(level, level.RoutePrice);
                                         level.IsRouteLocked = true;
                                         level.IsRouteHidden = false;
                                     }
                                     else
                                     {
                                         level.RoutePrice = 0;
+                                        SetDawnPrice(level, level.RoutePrice);
                                         level.IsRouteLocked = false;
                                         level.IsRouteHidden = false;
                                     }
@@ -673,11 +742,11 @@ namespace ZetasMoonTweaks
                         if (level.NumberlessPlanetName == "Gordion" || level.NumberlessPlanetName == "Galetry" || level.NumberlessPlanetName == "Oxyde")
                         {
                             //CURRENT moon is free/company so dont change risk level
-                            Logger.LogDebug($"Current moon " + level.NumberlessPlanetName + " is free/company/oxyde, so no risk level changes will be applied");
+                            Logger.LogDebug($"Current moon " + level.NumberlessPlanetName + " is company/oxyde, so no risk level changes will be applied");
                         }
                         else
                         {
-                            Logger.LogDebug($"Current moon " + level.NumberlessPlanetName + " is not free/company/oxyde, so risk level changes will be applied");
+                            Logger.LogDebug($"Current moon " + level.NumberlessPlanetName + " is not company/oxyde, so risk level changes will be applied");
                             // Convert current risk level to a float
                             // Get current weather, find associated float increase or use default if cant be found
                             // Add both values together

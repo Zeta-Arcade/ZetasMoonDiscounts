@@ -18,7 +18,7 @@ namespace ZetasMoonTweaks
     {
         public static BepInEx.Logging.ManualLogSource Logger = ZMTBase.Logger;
 
-        private static readonly MethodInfo? SetFromServerMethod = typeof(ProgressivePredicate).GetMethod("SetFromServer", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly MethodInfo? SetFromServerMethod = AccessTools.Method(typeof(ProgressivePredicate), "SetFromServer");
 
         private static void LockMoon(SelectableLevel level)
         {
@@ -28,7 +28,20 @@ namespace ZetasMoonTweaks
                 Logger.LogWarning($"Locked Dawn moon: {level.PlanetName}");
             }
         }
-        [HarmonyPatch(typeof(Terminal))] //On Lobby Start, but isn't working currently
+        [HarmonyPatch(typeof(GrabbableObject), nameof(GrabbableObject.ItemActivate))]
+        public static class OxydeTabletActivatePatch
+        {
+            public static void Postfix(GrabbableObject __instance)
+            {
+                if (ZMTBase.Config.OxydeTabletForceUnlocksOxyde.Value)
+                {
+                    if (__instance.itemProperties == null) return;
+                    if (__instance.itemProperties.itemName != "Oxyde Tablet") return;
+                    ZMTNetwork.SendOxydeTablet(true);
+                }
+            }
+        }
+        [HarmonyPatch(typeof(Terminal))] 
         internal class TerminalPatch
         {
             [HarmonyPatch("Start")]
@@ -66,10 +79,12 @@ namespace ZetasMoonTweaks
             [HarmonyPostfix]
             private static void ResetHasRerouted()
             {
+                ZMTBase.Instance.hasRoutedForThisQuota = false;
                 ZMTBase.Instance.displayedOxydeAlertForQuota = false;
                 ZMTBase.ModDataInstance.hasReroutedCompany = false;
                 ZMTBase.ModDataInstance.hasReroutedMoonPair = false;
                 ZMTBase.ModDataInstance.seedSetForQuota = false;
+                ZMTBase.ModDataInstance.isOxydeOveride = false;
                 ZMTBase.ModDataInstance.ZMTSaveData();
                 if (ZMTBase.Config.RelockOxydeOnEject.Value) //If Enabled option to Relock Oxyde
                 {
@@ -101,7 +116,13 @@ namespace ZetasMoonTweaks
             [HarmonyPostfix]
             private static void AutoShipToCompanyBuilding(StartOfRound __instance)
             {
-                if (ZMTBase.Config.AutoCompanyBuilding.Value)
+                if (!StartOfRound.Instance) return;
+                if (!StartOfRound.Instance.currentLevel) return;
+                if (!GameNetworkManager.Instance.isHostingGame)
+                {
+                    return;
+                }
+                if (ZMTBase.Config.AutoCompanyBuilding.Value && !ZMTBase.Instance.hasRoutedForThisQuota && StartOfRound.Instance.CanChangeLevels() && !ZMTBase.ModDataInstance.hasReroutedCompany && TimeOfDay.Instance.daysUntilDeadline == 0 && ZMTBase.Config.AutoCompanyBuilding.Value && TimeOfDay.Instance.quotaFulfilled < TimeOfDay.Instance.profitQuota)
                 {
                     Logger.LogDebug($"Trying to reroute ship");
                     ZMTBase.Instance.rerouteShip(GameNetworkManager.Instance, true);
@@ -155,8 +176,10 @@ namespace ZetasMoonTweaks
         [HarmonyPrefix]
         private static void SetNewProfitQuotaPatchPre()
         {
+            ZMTBase.Instance.hasRoutedForThisQuota = false;
             ZMTBase.Instance.displayedOxydeAlertForQuota = false;
             ZMTBase.ModDataInstance.seedSetForQuota = false;
+            ZMTBase.ModDataInstance.isOxydeOveride = false;
             ZMTBase.ModDataInstance.ZMTSaveData();
             ZMTBase.Instance.RollNewSeed();
             ZMTBase.Instance.CalculateMoonPrices();
@@ -179,7 +202,13 @@ namespace ZetasMoonTweaks
         [HarmonyPatch("UpdateProfitQuotaCurrentTime")]
         private static void UpdateProfitQuotaCurrentTimePatch()
         {
-            if (ZMTBase.Config.IronmanAutoRoute.Value && ZMTBase.Config.IronmanMode.Value)
+            if (!StartOfRound.Instance) return;
+            if (!StartOfRound.Instance.currentLevel) return;
+            if (!GameNetworkManager.Instance.isHostingGame)
+            {
+                return;
+            }
+            if (ZMTBase.Config.IronmanAutoRoute.Value && ZMTBase.Config.IronmanMode.Value && StartOfRound.Instance.CanChangeLevels() && !ZMTBase.ModDataInstance.hasReroutedMoonPair && ZMTBase.Config.IronmanAutoRoute.Value && TimeOfDay.Instance.quotaFulfilled < TimeOfDay.Instance.profitQuota)
             {
                 ZMTBase.Instance.rerouteShip(GameNetworkManager.Instance, false);
             }
