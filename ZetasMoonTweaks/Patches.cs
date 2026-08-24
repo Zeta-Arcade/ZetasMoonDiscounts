@@ -122,7 +122,7 @@ namespace ZetasMoonTweaks
                 {
                     return;
                 }
-                if (ZMTBase.Config.AutoCompanyBuilding.Value && !ZMTBase.Instance.hasRoutedForThisQuota && StartOfRound.Instance.CanChangeLevels() && !ZMTBase.ModDataInstance.hasReroutedCompany && TimeOfDay.Instance.daysUntilDeadline == 0 && ZMTBase.Config.AutoCompanyBuilding.Value && TimeOfDay.Instance.quotaFulfilled < TimeOfDay.Instance.profitQuota)
+                if (ZMTBase.Config.AutoCompanyBuilding.Value && !ZMTBase.Instance.hasRoutedForThisQuota && StartOfRound.Instance.CanChangeLevels() && !ZMTBase.ModDataInstance.hasReroutedCompany && TimeOfDay.Instance.daysUntilDeadline == 0 && TimeOfDay.Instance.quotaFulfilled < TimeOfDay.Instance.profitQuota)
                 {
                     Logger.LogDebug($"Trying to reroute ship");
                     ZMTBase.Instance.rerouteShip(GameNetworkManager.Instance, true);
@@ -180,6 +180,7 @@ namespace ZetasMoonTweaks
             ZMTBase.Instance.displayedOxydeAlertForQuota = false;
             ZMTBase.ModDataInstance.seedSetForQuota = false;
             ZMTBase.ModDataInstance.isOxydeOveride = false;
+            ZMTBase.ModDataInstance.hasReroutedCompany = false;
             ZMTBase.ModDataInstance.ZMTSaveData();
             ZMTBase.Instance.RollNewSeed();
             ZMTBase.Instance.CalculateMoonPrices();
@@ -208,7 +209,7 @@ namespace ZetasMoonTweaks
             {
                 return;
             }
-            if (ZMTBase.Config.IronmanAutoRoute.Value && ZMTBase.Config.IronmanMode.Value && StartOfRound.Instance.CanChangeLevels() && !ZMTBase.ModDataInstance.hasReroutedMoonPair && ZMTBase.Config.IronmanAutoRoute.Value && TimeOfDay.Instance.quotaFulfilled < TimeOfDay.Instance.profitQuota)
+            if (ZMTBase.Config.IronmanAutoRoute.Value && ZMTBase.Config.IronmanMode.Value && StartOfRound.Instance.CanChangeLevels() && !ZMTBase.ModDataInstance.hasReroutedMoonPair && TimeOfDay.Instance.quotaFulfilled < TimeOfDay.Instance.profitQuota)
             {
                 ZMTBase.Instance.rerouteShip(GameNetworkManager.Instance, false);
             }
