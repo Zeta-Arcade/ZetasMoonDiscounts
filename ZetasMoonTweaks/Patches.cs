@@ -1,16 +1,7 @@
 ﻿using Dawn;
-using Dawn.Utils;
 using Dusk;
 using HarmonyLib;
 using LethalLevelLoader;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
-using Unity.Netcode;
-using UnityEngine;
 
 namespace ZetasMoonTweaks
 {
@@ -18,15 +9,20 @@ namespace ZetasMoonTweaks
     {
         public static BepInEx.Logging.ManualLogSource Logger = ZMTBase.Logger;
 
-        private static readonly MethodInfo? SetFromServerMethod = AccessTools.Method(typeof(ProgressivePredicate), "SetFromServer");
+        private delegate void SetFromServerDelegate(ProgressivePredicate instance, bool isUnlocked, bool isHidden);
+
+        private static readonly SetFromServerDelegate? SetFromServer = AccessTools.MethodDelegate<SetFromServerDelegate>(AccessTools.Method(typeof(ProgressivePredicate),"SetFromServer"));
 
         private static void LockMoon(SelectableLevel level)
         {
-            if (level.GetDawnInfo()?.DawnPurchaseInfo.PurchasePredicate is ProgressivePredicate progressive)
+            ProgressivePredicate progressive = level.GetDawnInfo()?.DawnPurchaseInfo.PurchasePredicate as ProgressivePredicate;
+            if (progressive == null) return;
+            if (SetFromServer == null)
             {
-                SetFromServerMethod?.Invoke(progressive, new object[] { false, progressive.ProgressiveStates.IsHidden });
-                Logger.LogWarning($"Locked Dawn moon: {level.PlanetName}");
+                Logger.LogError("Could not find ProgressivePredicate.SetFromServer!");
+                return;
             }
+            SetFromServer(progressive, false, progressive.ProgressiveStates.IsHidden);
         }
         [HarmonyPatch(typeof(GrabbableObject), nameof(GrabbableObject.ItemActivate))]
         public static class OxydeTabletActivatePatch
@@ -181,11 +177,12 @@ namespace ZetasMoonTweaks
             ZMTBase.ModDataInstance.seedSetForQuota = false;
             ZMTBase.ModDataInstance.isOxydeOveride = false;
             ZMTBase.ModDataInstance.hasReroutedCompany = false;
+            ZMTBase.ModDataInstance.hasReroutedMoonPair = false;
             ZMTBase.ModDataInstance.ZMTSaveData();
             ZMTBase.Instance.RollNewSeed();
             ZMTBase.Instance.CalculateMoonPrices();
             ZMTBase.Instance.CalculateMoonRiskLevels();
-            ZMTBase.Instance.SetOxydeCostFromConfigs();
+            //ZMTBase.Instance.SetOxydeCostFromConfigs();
         }
         [HarmonyPostfix]
         [HarmonyPatch("SetBuyingRateForDay")]

@@ -1,28 +1,15 @@
 ﻿using BepInEx;
-using BepInEx.Configuration;
 using Dawn;
-using Dawn.Utils;
-using Dusk;
 using GameNetcodeStuff;
 using HarmonyLib;
 using LethalLevelLoader;
-using LethalModDataLib.Attributes;
-using LethalModDataLib.Enums;
 using LethalModDataLib.Features;
-using LethalModDataLib.Helpers;
-using MrovLib;
-using MrovLib.Compatibility;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using System.Reflection.Emit;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
 using Unity.Netcode;
 using UnityEngine;
-using UnityEngine.Rendering;
 using WeatherRegistry;
 using WeatherTweaks.Definitions;
 
@@ -327,7 +314,7 @@ namespace ZetasMoonTweaks
             if (ModDataInstance.isOxydeOveride)
             {
                 SetOxydeCostFromDeadline(oxydeRef);
-                OxydeHUDAlert(true, "Oxyde has been unlocked for this Quota, thanks to the Oxyde Tablet!");
+                OxydeHUDAlert(false, "Oxyde has been unlocked for this Quota, thanks to the Oxyde Tablet!");
             }
             else
             {
@@ -340,7 +327,7 @@ namespace ZetasMoonTweaks
                         if (quotaIsEven)
                         {
                             SetOxydeCostFromDeadline(oxydeRef);
-                            OxydeHUDAlert(true, "Oxyde has been unlocked for this Quota, since the Quota # is an Even Number!");
+                            OxydeHUDAlert(false, "Oxyde has been unlocked for this Quota, since the Quota # is an Even Number!");
                         }
                         else
                         {
@@ -353,7 +340,7 @@ namespace ZetasMoonTweaks
                         if (!quotaIsEven)
                         {
                             SetOxydeCostFromDeadline(oxydeRef);
-                            OxydeHUDAlert(true, "Oxyde has been unlocked for this Quota, since the Quota # is an Odd Number!");
+                            OxydeHUDAlert(false, "Oxyde has been unlocked for this Quota, since the Quota # is an Odd Number!");
                         }
                         else
                         {
@@ -405,6 +392,7 @@ namespace ZetasMoonTweaks
         {
             if (HUDManager.Instance != null && StartOfRound.Instance != null)
             {
+                if (StartOfRound.Instance.localPlayerController == null) return;
                 if (!displayedOxydeAlertForQuota && StartOfRound.Instance.localPlayerController.isPlayerControlled && StartOfRound.Instance.inShipPhase)
                 {
                     displayedOxydeAlertForQuota = true;

@@ -2,11 +2,6 @@
 using LethalModDataLib.Enums;
 using LethalModDataLib.Features;
 using LethalModDataLib.Helpers;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ZetasMoonTweaks
 {
@@ -35,6 +30,7 @@ namespace ZetasMoonTweaks
             SaveLoadHandler.LoadData(ModDataHelper.GetModDataKey(this, nameof(currentQuotaRoll)));
             SaveLoadHandler.LoadData(ModDataHelper.GetModDataKey(this, nameof(seedSetForQuota)));
             SaveLoadHandler.LoadData(ModDataHelper.GetModDataKey(this, nameof(hasReroutedCompany)));
+            SaveLoadHandler.LoadData(ModDataHelper.GetModDataKey(this, nameof(hasReroutedMoonPair)));
             SaveLoadHandler.LoadData(ModDataHelper.GetModDataKey(this, nameof(isOxydeOveride)));
         }
     }
