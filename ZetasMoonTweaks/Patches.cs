@@ -182,17 +182,16 @@ namespace ZetasMoonTweaks
             ZMTBase.Instance.RollNewSeed();
             ZMTBase.Instance.CalculateMoonPrices();
             ZMTBase.Instance.CalculateMoonRiskLevels();
-            //ZMTBase.Instance.SetOxydeCostFromConfigs();
-        }
-        [HarmonyPostfix]
-        [HarmonyPatch("SetBuyingRateForDay")]
-        private static void SetBuyingRateForDayPatch()
-        {
-            ZMTBase.Instance.ModifyBuyingRate();
         }
         [HarmonyPostfix]
         [HarmonyPatch("SetNewProfitQuota")]
         private static void SetNewProfitQuotaPatchPost()
+        {
+            ZMTBase.Instance.SetOxydeCostFromConfigs();
+        }
+        [HarmonyPostfix]
+        [HarmonyPatch("SetBuyingRateForDay")]
+        private static void SetBuyingRateForDayPatch()
         {
             ZMTBase.Instance.ModifyBuyingRate();
         }

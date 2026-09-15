@@ -296,7 +296,7 @@ namespace ZetasMoonTweaks
         public void SetOxydeCostFromConfigs()
         {
             bool quotaIsEven;
-            int currentQuotaNo = TimeOfDay.Instance.quotaFulfilled + 1;
+            int currentQuotaNo = TimeOfDay.Instance.timesFulfilledQuota + 1;
             ExtendedLevel oxydeRef = PatchedContent.ExtendedLevels.Find(x => x.NumberlessPlanetName == "Oxyde");
             if (oxydeRef == null)
             {
