@@ -1,5 +1,6 @@
 ﻿using LethalModDataLib.Attributes;
 using LethalModDataLib.Enums;
+using LethalModDataLib.Events;
 using LethalModDataLib.Features;
 using LethalModDataLib.Helpers;
 
@@ -16,6 +17,11 @@ namespace ZetasMoonTweaks
         [ModData(SaveWhen.OnSave, LoadWhen.OnLoad, SaveLocation.CurrentSave)]
         public bool seedSetForQuota;
         [ModData(SaveWhen.OnSave, LoadWhen.OnLoad, SaveLocation.CurrentSave)]
+        public string selectedRandomMoons = "";
+
+        [ModData(SaveWhen.OnSave, LoadWhen.OnLoad, SaveLocation.CurrentSave)]
+        public int lastRandomMoonsQuota = -1;
+        [ModData(SaveWhen.OnSave, LoadWhen.OnLoad, SaveLocation.CurrentSave)]
         public bool isOxydeOveride;
         public void ZMTSaveData()
         {
@@ -24,6 +30,8 @@ namespace ZetasMoonTweaks
             SaveLoadHandler.SaveData(ModDataHelper.GetModDataKey(this, nameof(hasReroutedCompany)));
             SaveLoadHandler.SaveData(ModDataHelper.GetModDataKey(this, nameof(hasReroutedMoonPair)));
             SaveLoadHandler.SaveData(ModDataHelper.GetModDataKey(this, nameof(isOxydeOveride)));
+            SaveLoadHandler.SaveData(ModDataHelper.GetModDataKey(this, nameof(selectedRandomMoons)));
+            SaveLoadHandler.SaveData(ModDataHelper.GetModDataKey(this, nameof(lastRandomMoonsQuota)));
         }
         public void ZMTLoadData()
         {
@@ -32,6 +40,8 @@ namespace ZetasMoonTweaks
             SaveLoadHandler.LoadData(ModDataHelper.GetModDataKey(this, nameof(hasReroutedCompany)));
             SaveLoadHandler.LoadData(ModDataHelper.GetModDataKey(this, nameof(hasReroutedMoonPair)));
             SaveLoadHandler.LoadData(ModDataHelper.GetModDataKey(this, nameof(isOxydeOveride)));
+            SaveLoadHandler.LoadData(ModDataHelper.GetModDataKey(this, nameof(selectedRandomMoons)));
+            SaveLoadHandler.LoadData(ModDataHelper.GetModDataKey(this, nameof(lastRandomMoonsQuota)));
         }
     }
 }

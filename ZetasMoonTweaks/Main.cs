@@ -34,9 +34,10 @@ namespace ZetasMoonTweaks
         public int groupCredits;
         public bool displayedOxydeAlertForQuota;
         public bool hasRoutedForThisQuota = false;
-        //internal ExtendedLevel[] AllLevels { get; private set; } = PatchedContent.ExtendedLevels.ToArray();
         private List<LevelPairedWithPrice> MoonDefaultCosts = new List<LevelPairedWithPrice>();
         private List<LevelPairedWithRisk> MoonDefaultRiskLevels = new List<LevelPairedWithRisk>();
+        public List<string> currentlySelectedRandomMoons = new List<string>();
+        public int lastRandomMoonsQuota = -1;
         private void Awake()
         {
             if (Instance == null)
@@ -57,6 +58,17 @@ namespace ZetasMoonTweaks
                 Logger.LogError($"Harmony patching failed: {ex}");
             }
             Logger.LogInfo($"Plugin is loaded!");
+            var method = AccessTools.Method(typeof(EntranceTeleport), "TeleportPlayer");
+            var patchInfo = Harmony.GetPatchInfo(method);
+            Logger.LogDebug($"TeleportPlayer found: {method != null}");
+            Logger.LogDebug($"TeleportPlayer patched: {patchInfo != null}");
+            if (patchInfo != null)
+            {
+                foreach (var postfix in patchInfo.Postfixes)
+                {
+                    Logger.LogDebug($"Postfix owner: {postfix.owner}");
+                }
+            }
         }
         private static readonly PropertyInfo CostProperty = AccessTools.Property(typeof(DawnPurchaseInfo), "Cost");
         public void RollNewSeed()
@@ -86,7 +98,7 @@ namespace ZetasMoonTweaks
             if (StartOfRound.Instance.IsHost) //Host destroys all banned objects on in the ship
             {
                 var bannedScraps = FindObjectsOfType<GrabbableObject>().Where(o => !o.isHeld && o.isInShipRoom && o.itemProperties && (o.itemProperties.itemName == "Normal Shredded Scraps" || o.itemProperties.itemName == "Sally Cube")).ToList();
-                Logger.LogInfo("Destroying " + bannedScraps.Count + " scraps when in the ship when Orbiting");
+                Logger.LogDebug("Destroying " + bannedScraps.Count + " scraps when in the ship when Orbiting");
                 for (int i = 0; i < bannedScraps.Count; i++)
                 {
                     bannedScraps[i].NetworkObject.Despawn();
@@ -106,7 +118,7 @@ namespace ZetasMoonTweaks
                 if (allSlots[slot] == null) continue;
                 if (allSlots[slot].itemProperties.itemName == "Normal Shredded Scraps" || allSlots[slot].itemProperties.itemName == "Sally Cube")
                 {
-                    Logger.LogInfo($"Destroying banned scrap in slot " + slot + " scraps when Orbiting");
+                    Logger.LogDebug($"Destroying banned scrap in slot " + slot + " scraps when Orbiting");
                     ZMTNetwork.SendItemDestroy(StartOfRound.Instance.localPlayerController.playerClientId, slot);
                 }
             }
@@ -145,11 +157,8 @@ namespace ZetasMoonTweaks
         {
             if (!StartOfRound.Instance) return;
             if (!StartOfRound.Instance.currentLevel) return;
-            if (!networkManager.isHostingGame)
-            {
-                return;
-            }
-            int newMoonID = 0;
+            if (!networkManager.isHostingGame) return;
+            int newMoonID = -1;
             if (toCompany)
             {
                 newMoonID = 3;
@@ -160,7 +169,22 @@ namespace ZetasMoonTweaks
             }
             else
             {
-                newMoonID = GetNextQuotaMoonID();
+                if (Config.gamemode.Value == ConfigHandler.Gamemode.QuotaIronman)
+                {
+                    newMoonID = GetNextQuotaMoonID();
+                }
+                else if (Config.gamemode.Value == ConfigHandler.Gamemode.DayIronman)
+                {
+                    newMoonID = GetNextDayMoonID();
+                }
+                else if (Config.gamemode.Value == ConfigHandler.Gamemode.SMHQ)
+                {
+                    newMoonID = GetSMHQMoonID();
+                }
+                else if (Config.gamemode.Value == ConfigHandler.Gamemode.RandomMoons)
+                {
+                    newMoonID = GetRandomMoonID();
+                }
                 if (StartOfRound.Instance.currentLevelID == newMoonID)
                 {
                     ModDataInstance.hasReroutedMoonPair = true;
@@ -240,6 +264,18 @@ namespace ZetasMoonTweaks
                 currentQuotaNo = TimeOfDay.Instance.timesFulfilledQuota + 1;
                 Logger.LogDebug($"Current quota number is: " + currentQuotaNo);
             }
+            if (entries.Length > 0)
+            {
+                if (Config.shouldIronmanLoop.Value)
+                {
+                    currentQuotaNo = ((currentQuotaNo - 1) % entries.Length) + 1;
+                }
+                else
+                {
+                    currentQuotaNo = Mathf.Clamp(currentQuotaNo, 1, entries.Length);
+                }
+                Logger.LogDebug($"Ironman selected quota group is: {currentQuotaNo}");
+            }
             foreach (string entry in entries) //For each Pair of moons....
             {
                 pairNo++;
@@ -286,6 +322,74 @@ namespace ZetasMoonTweaks
                 }
             }
             return newID;
+        }
+        public int GetNextDayMoonID()
+        {
+            if (StartOfRound.Instance?.gameStats == null) return -1;
+            int currentDay = StartOfRound.Instance.gameStats.daysSpent + 1 - TimeOfDay.Instance.timesFulfilledQuota; //Times fulfilled quota is effectively how many times the company must have been sold on
+            string[] entries = Config.IronmanMoons.Value.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+            if (entries.Length == 0)
+            {
+                Logger.LogDebug("DayIronman has no configured moon groups!");
+                return -1;
+            }
+            int groupIndex = (currentDay - 1) % entries.Length;
+            string[] pairs = entries[groupIndex].Split(new[] { '@' }, StringSplitOptions.RemoveEmptyEntries);
+            if (pairs.Length < 2) return -1;
+            try
+            {
+                SelectableLevel selectableLevel = WeatherRegistry.ConfigHelper.ConvertStringToLevels(pairs[1].Trim())[0];
+                ExtendedLevel level = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == selectableLevel);
+                if (level == null) return -1;
+                Logger.LogDebug($"DayIronman routing to {level.NumberlessPlanetName}");
+                return level.SelectableLevel.levelID;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"DayIronman could not resolve moon: {ex}");
+                return -1;
+            }
+        }
+        public int GetSMHQMoonID()
+        {
+            string[] entries = Config.SMHQMoons.Value.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string entry in entries)
+            {
+                try
+                {
+                    SelectableLevel selectableLevel = WeatherRegistry.ConfigHelper.ConvertStringToLevels(entry.Trim())[0];
+                    ExtendedLevel level = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == selectableLevel);
+                    if (level != null)
+                    {
+                        Logger.LogDebug($"SMHQ routing to {level.NumberlessPlanetName}");
+                        return level.SelectableLevel.levelID;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError($"SMHQ could not resolve moon {entry}: {ex}");
+                }
+            }
+            return -1;
+        }
+        public int GetRandomMoonID()
+        {
+            if (currentlySelectedRandomMoons.Count == 0)
+            {
+                Logger.LogWarning($"Random Moons has no selected moons to route to!");
+                return -1;
+            }
+            foreach (string moonName in currentlySelectedRandomMoons)
+            {
+                ExtendedLevel currentConfigLevel =PatchedContent.ExtendedLevels.Find(x => x.NumberlessPlanetName == moonName);
+                if (currentConfigLevel != null)
+                {
+                    Logger.LogDebug($"Random Moons automatically routing to " +currentConfigLevel.NumberlessPlanetName);
+                    return currentConfigLevel.SelectableLevel.levelID;
+                }
+            }
+            Logger.LogWarning($"Random Moons could not find a valid moon to route to!");
+            return -1;
         }
         public void UpdateOxydeTabletStatus(bool newUnlockStatus)
         {
@@ -435,10 +539,10 @@ namespace ZetasMoonTweaks
         }
         public void CalculateMoonPrices()
         {
-            if (Config.ApplyDiscountChanges.Value || Config.IronmanMode.Value) //If Discounts on OR in Ironman Mode
+            if (Config.ApplyDiscountChanges.Value || Config.gamemode.Value != ConfigHandler.Gamemode.Normal) //If Discounts on OR in Ironman Mode
             {
                 Logger.LogDebug($"Attempting CalculateMoonPrices");
-                if (MoonDefaultCosts.Count < 1 && !Config.IronmanMode.Value)
+                if (MoonDefaultCosts.Count < 1 && Config.gamemode.Value == ConfigHandler.Gamemode.Normal)
                 {
                     Logger.LogDebug($"Default moon prices have not been set, skipping Calculation of moon prices");
                 }
@@ -449,7 +553,7 @@ namespace ZetasMoonTweaks
                     if (!StartOfRound.Instance.currentLevel) return;
                     SelectableLevel currentLevel = StartOfRound.Instance.currentLevel;
                     ExtendedLevel currentExtendedLevel = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == currentLevel);
-                    if (!Config.IronmanMode.Value) //If in normal mode
+                    if (Config.gamemode.Value == ConfigHandler.Gamemode.Normal) //If in normal mode
                     {
                         foreach (ExtendedLevel level in PatchedContent.ExtendedLevels)
                         {
@@ -515,7 +619,7 @@ namespace ZetasMoonTweaks
                             }
                         }
                     }
-                    else
+                    else if (Config.gamemode.Value == ConfigHandler.Gamemode.QuotaIronman || Config.gamemode.Value == ConfigHandler.Gamemode.DayIronman)
                     {
                         // Ironman Mode :KaguyaFace:
                         Logger.LogDebug($"Ironman Mode Detected");
@@ -524,11 +628,27 @@ namespace ZetasMoonTweaks
                             Logger.LogDebug($"Ironman Is Company");
                             string[] entries = Config.IronmanMoons.Value.ToString().Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries); //E.g. 0@Exp@Vow;300@Assurance@Solace; --> 0@Exp@Vow + 0@Assurance@Solace (Each are 1 entry)
                             int pairNo = 0;
-                            int currentQuotaNo = 0;
+                            int currentMoonNumber = 0;
+                            if (entries.Length > 0 && Config.shouldIronmanLoop)
+                            {
+                                currentMoonNumber = ((currentMoonNumber - 1) % entries.Length) + 1;
+                            }
+                            else if (entries.Length > 0 && !Config.shouldIronmanLoop)
+                            {
+                                currentMoonNumber = Mathf.Clamp(currentMoonNumber, 1, entries.Length);
+                            }
                             if (TimeOfDay.Instance != null)
                             {
-                                currentQuotaNo = TimeOfDay.Instance.timesFulfilledQuota + 1;
-                                Logger.LogDebug($"Current quota number is: " + currentQuotaNo);
+                                if (Config.gamemode.Value == ConfigHandler.Gamemode.QuotaIronman)
+                                {
+                                    currentMoonNumber = TimeOfDay.Instance.timesFulfilledQuota + 1;
+                                    Logger.LogDebug($"Current quota number is: " + currentMoonNumber);
+                                }
+                                else if (Config.gamemode.Value == ConfigHandler.Gamemode.DayIronman)
+                                {
+                                    currentMoonNumber = StartOfRound.Instance.gameStats.daysSpent + 1 - TimeOfDay.Instance.timesFulfilledQuota;
+                                    Logger.LogDebug($"Current day number is: " + currentMoonNumber);
+                                }
                             }
                             foreach (string entry in entries) //For each Pair of moons....
                             {
@@ -565,11 +685,11 @@ namespace ZetasMoonTweaks
 
                                                     if (Config.IronmanRestrictRouting.Value)
                                                     {
-                                                        if (currentQuotaNo == pairNo)
+                                                        if (currentMoonNumber == pairNo)
                                                         {
                                                             currentConfigLevel.IsRouteLocked = false;
                                                             currentConfigLevel.IsRouteHidden = false;
-                                                            Logger.LogDebug($"Moon " + currentConfigLevel.NumberlessPlanetName + " is not locked because it is from pair " + pairNo + " and the current quota is " + currentQuotaNo);
+                                                            Logger.LogDebug($"Moon " + currentConfigLevel.NumberlessPlanetName + " is not locked because it is from pair " + pairNo + " and the current quota/day is " + currentMoonNumber);
                                                             if (Config.IronmanAutoRoute.Value)
                                                             {
                                                                 currentConfigLevel.RoutePrice = 0;
@@ -587,7 +707,7 @@ namespace ZetasMoonTweaks
                                                             currentConfigLevel.IsRouteHidden = true;
                                                             currentConfigLevel.RoutePrice = 9999;
                                                             SetDawnPrice(currentConfigLevel, currentConfigLevel.RoutePrice);
-                                                            Logger.LogDebug($"Moon " + currentConfigLevel.NumberlessPlanetName + " is locked because it is from pair " + pairNo + " and the current quota is " + currentQuotaNo);
+                                                            Logger.LogDebug($"Moon " + currentConfigLevel.NumberlessPlanetName + " is locked because it is from pair " + pairNo + " and the current quota/day is " + currentMoonNumber);
                                                         }
                                                     }
                                                     else
@@ -614,65 +734,63 @@ namespace ZetasMoonTweaks
                             Logger.LogDebug($"Ironman is a normal moon");
                             bool foundMoonInPair = false;
                             List<string> pairedMoonNames = new List<string>();
-                            string[] entries = Config.IronmanMoons.Value.ToString().Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries); //E.g. 0@Exp@Vow;300@Assurance@Solace; --> 0@Exp@Vow + 0@Assurance@Solace (Each are 1 entry)
-                            foreach (string entry in entries) //For each group of moons in the config...
+                            string[] entries = Config.IronmanMoons.Value.ToString().Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                            int currentMoonNumber = 0;
+                            if (Config.gamemode.Value == ConfigHandler.Gamemode.QuotaIronman)
                             {
-                                string[] pairs = entry.Split(new[] { '@' }, StringSplitOptions.RemoveEmptyEntries); //Split them, E.g. 0@Exp@Vow --> 0 + Exp + Vow 
+                                if (TimeOfDay.Instance != null)
+                                {
+                                    currentMoonNumber = TimeOfDay.Instance.timesFulfilledQuota + 1;
+                                    Logger.LogDebug($"Current quota number is: {currentMoonNumber}");
+                                }
+                            }
+                            else if (Config.gamemode.Value == ConfigHandler.Gamemode.DayIronman)
+                            {
+                                if (StartOfRound.Instance?.gameStats != null)
+                                {
+                                    currentMoonNumber = StartOfRound.Instance.gameStats.daysSpent + 1 - TimeOfDay.Instance.timesFulfilledQuota;
+                                    Logger.LogDebug($"Current day number is: {currentMoonNumber}");
+                                }
+                            }
+                            int pairNo = 0;
+                            foreach (string entry in entries)
+                            {
+                                pairNo++;
+                                // Only process the group for the current quota/day
+                                if (pairNo != currentMoonNumber) continue;
+                                Logger.LogDebug($"Ironman current group is: {entry}");
+                                string[] pairs = entry.Split(new[] { '@' }, StringSplitOptions.RemoveEmptyEntries);
                                 int index = 0;
                                 foreach (string pair in pairs)
                                 {
-                                    if (index != 0) //Skips the initial number part of the config
+                                    if (index != 0) // Skip the route price
                                     {
-                                        bool safe = false;
                                         try
                                         {
-                                            ExtendedLevel testLevel = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == WeatherRegistry.ConfigHelper.ConvertStringToLevels(pair)[0]);
-                                            safe = true;
+                                            SelectableLevel selectableLevel = WeatherRegistry.ConfigHelper.ConvertStringToLevels(pair.Trim())[0];
+                                            ExtendedLevel currentConfigLevel = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == selectableLevel);
+                                            if (currentConfigLevel != null)
+                                            {
+                                                Logger.LogDebug($"Ironman adding moon {currentConfigLevel.NumberlessPlanetName} " + $"from group {pairNo}");
+                                                pairedMoonNames.Add(currentConfigLevel.NumberlessPlanetName);
+                                            }
+                                            else
+                                            {
+                                                Logger.LogError($"Ironman could not find a matching level for {pair}");
+                                            }
                                         }
                                         catch (Exception ex)
                                         {
-                                            Logger.LogError($"Error when trying to parse " + pair + " in the ExtendedLevels list");
-                                        }
-                                        if (safe)
-                                        {
-                                            ExtendedLevel currentConfigLevel = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == WeatherRegistry.ConfigHelper.ConvertStringToLevels(pairs[index])[0]);
-                                            Logger.LogDebug($"Current level is: " + currentExtendedLevel.NumberlessPlanetName + " and Current config level is " + currentConfigLevel.NumberlessPlanetName);
-                                            if (currentExtendedLevel.NumberlessPlanetName == currentConfigLevel.NumberlessPlanetName)
-                                            { //If current level = level in this particular config entry E.g. if Exp=Exp
-                                                foundMoonInPair = true; //Set flag to true and add then loop through the config again to add each moon in it
-                                                int index2 = 0;
-                                                foreach (string pair2 in pairs)
-                                                {
-                                                    if (index2 != 0)
-                                                    {
-                                                        bool safe2 = false;
-                                                        try
-                                                        {
-                                                            ExtendedLevel testLevel = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == WeatherRegistry.ConfigHelper.ConvertStringToLevels(pairs[index2])[0]);
-                                                            safe2 = true;
-                                                        }
-                                                        catch (Exception ex)
-                                                        {
-                                                            Logger.LogError($"Error when trying to parse " + pairs + " in the ExtendedLevels list");
-                                                        }
-                                                        if (safe2)
-                                                        {
-                                                            ExtendedLevel currentConfigLevel2 = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == WeatherRegistry.ConfigHelper.ConvertStringToLevels(pairs[index2])[0]);
-                                                            Logger.LogDebug($"Trying to add " + pairs[index2] + " passed as " + currentConfigLevel2);
-                                                            pairedMoonNames.Add(currentConfigLevel2.NumberlessPlanetName); //Always adds 
-                                                        }
-                                                    }
-                                                    index2++;
-                                                }
-                                            }
+                                            Logger.LogError($"Ironman error when trying to parse {pair}: {ex}");
                                         }
                                     }
                                     index++;
                                 }
+                                break;
                             }
                             foreach (ExtendedLevel level in PatchedContent.ExtendedLevels)
                             {
-                                if (level.NumberlessPlanetName != "Gordion" && level.NumberlessPlanetName != "Galetry" && level.NumberlessPlanetName != "Oxyde" && level.NumberlessPlanetName != currentExtendedLevel.NumberlessPlanetName)
+                                if (level.NumberlessPlanetName != "Gordion" && level.NumberlessPlanetName != "Galetry" && level.NumberlessPlanetName != "Oxyde")
                                 {
                                     bool matchesAMoonName = false;
                                     foreach (string moonName in pairedMoonNames)
@@ -703,6 +821,118 @@ namespace ZetasMoonTweaks
                                         level.IsRouteHidden = false;
                                     }
                                 }
+                            }
+                        }
+                    }
+                    else if (Config.gamemode.Value == ConfigHandler.Gamemode.SMHQ)
+                    {
+                        Logger.LogDebug($"SMHQ Mode Detected");
+                        string[] entries = Config.SMHQMoons.Value.ToString().Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                        List<string> allowedMoonNames = new List<string>();
+                        foreach (string entry in entries)
+                        {
+                            Logger.LogDebug($"SMHQ currently on entry " + entry);
+                            try
+                            {
+                                SelectableLevel selectableLevel = WeatherRegistry.ConfigHelper.ConvertStringToLevels(entry.Trim())[0];
+                                ExtendedLevel currentConfigLevel = PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == selectableLevel);
+                                if (currentConfigLevel != null)
+                                {
+                                    Logger.LogDebug($"SMHQ allowing moon " + currentConfigLevel.NumberlessPlanetName);
+                                    allowedMoonNames.Add(currentConfigLevel.NumberlessPlanetName);
+                                    currentConfigLevel.RoutePrice = 0;
+                                    SetDawnPrice(currentConfigLevel, currentConfigLevel.RoutePrice);
+                                    currentConfigLevel.IsRouteLocked = false;
+                                    currentConfigLevel.IsRouteHidden = false;
+                                }
+                                else
+                                {
+                                    Logger.LogError($"SMHQ could not find a matching level for " + entry);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Logger.LogError($"SMHQ error when trying to parse " + entry + ": " + ex);
+                            }
+                        }
+                        foreach (ExtendedLevel level in PatchedContent.ExtendedLevels)
+                        {
+                            // Keep company stuff
+                            if (level.NumberlessPlanetName == "Gordion" || level.NumberlessPlanetName == "Galetry" || level.NumberlessPlanetName == "Oxyde")
+                            {
+                                continue;
+                            }
+                            bool matchesAMoonName = false;
+                            foreach (string moonName in allowedMoonNames)
+                            {
+                                Logger.LogDebug($"SMHQ current level checked is " + level.NumberlessPlanetName + " vs. " + moonName);
+                                if (level.NumberlessPlanetName == moonName)
+                                {
+                                    Logger.LogDebug($"SMHQ they are a match");
+                                    matchesAMoonName = true;
+                                    break;
+                                }
+                            }
+                            if (!matchesAMoonName)
+                            {
+                                Logger.LogDebug($"SMHQ locking moon " + level.NumberlessPlanetName);
+                                level.RoutePrice = 9999;
+                                SetDawnPrice(level, level.RoutePrice);
+                                level.IsRouteLocked = true;
+                                level.IsRouteHidden = true;
+                            }
+                            else
+                            {
+                                Logger.LogDebug($"SMHQ unlocking moon " + level.NumberlessPlanetName);
+                                level.RoutePrice = 0;
+                                SetDawnPrice(level, level.RoutePrice);
+                                level.IsRouteLocked = false;
+                                level.IsRouteHidden = false;
+                            }
+                        }
+                    }
+                    else if (Config.gamemode.Value == ConfigHandler.Gamemode.RandomMoons)
+                    {
+                        Logger.LogDebug($"Random Moons Mode Detected");
+                        RollRandomMoons();
+                        List<string> allowedMoonNames = currentlySelectedRandomMoons;
+                        if (allowedMoonNames.Count == 0)
+                        {
+                            Logger.LogWarning($"Random Moons has no selected moons, skipping route restrictions");
+                            return;
+                        }
+                        foreach (ExtendedLevel level in PatchedContent.ExtendedLevels)
+                        {
+                            if (level.NumberlessPlanetName == "Gordion" || level.NumberlessPlanetName == "Galetry" || level.NumberlessPlanetName == "Oxyde")
+                            {
+                                continue;
+                            }
+                            bool matchesAMoonName = false;
+                            foreach (string moonName in allowedMoonNames)
+                            {
+                                Logger.LogDebug($"Random Moons current level checked is " + level.NumberlessPlanetName + " and " + moonName);
+                                if (level.NumberlessPlanetName == moonName)
+                                {
+                                    Logger.LogDebug($"Random Moons they are a match");
+                                    matchesAMoonName = true;
+                                    break;
+                                }
+                            }
+                            if (!matchesAMoonName)
+                            {
+                                Logger.LogDebug($"Random Moons locking moon " + level.NumberlessPlanetName);
+                                level.RoutePrice = 9999;
+                                SetDawnPrice(level, level.RoutePrice);
+                                level.IsRouteLocked = true;
+                                level.IsRouteHidden = true;
+                            }
+                            else
+                            {
+                                Logger.LogDebug($"Random Moons unlocking moon " + level.NumberlessPlanetName);
+                                level.RoutePrice = 0;
+                                SetDawnPrice(level, level.RoutePrice);
+                                level.IsRouteLocked = false;
+                                level.IsRouteHidden = false;
                             }
                         }
                     }
@@ -752,7 +982,111 @@ namespace ZetasMoonTweaks
                 }
             }
         }
+        public void RollRandomMoons()
+        {
+            if (GameNetworkManager.Instance == null) return;
+            if (!GameNetworkManager.Instance.isHostingGame) return;
+            if (TimeOfDay.Instance == null) return;
 
+            Logger.LogDebug($"Attempting to roll Random Moons");
+
+            int currentQuota = TimeOfDay.Instance.timesFulfilledQuota;
+
+            if (ModDataInstance.lastRandomMoonsQuota == currentQuota && !string.IsNullOrEmpty(ModDataInstance.selectedRandomMoons))
+            {
+                if (lastRandomMoonsQuota != currentQuota || currentlySelectedRandomMoons.Count == 0)
+                {
+                    Logger.LogDebug($"Random Moons restoring existing selection for this quota");
+                    SetRandomMoons(ModDataInstance.selectedRandomMoons,ModDataInstance.lastRandomMoonsQuota);
+                }
+                return;
+            }
+            // Don't reroll if we already have moons selected for this quota
+            if (lastRandomMoonsQuota == currentQuota && currentlySelectedRandomMoons.Count > 0)
+            {
+                Logger.LogDebug($"Random Moons have already been rolled for this quota");
+                return;
+            }
+            string[] entries = Config.RandomMoons.Value.ToString().Split(new[] { ';' },StringSplitOptions.RemoveEmptyEntries);
+            List<ExtendedLevel> possibleMoons = new List<ExtendedLevel>();
+            foreach (string entry in entries)
+            {
+                Logger.LogDebug($"Random Moons currently on entry " + entry);
+                try
+                {
+                    SelectableLevel selectableLevel = WeatherRegistry.ConfigHelper.ConvertStringToLevels(entry.Trim())[0];
+                    ExtendedLevel currentConfigLevel =PatchedContent.ExtendedLevels.Find(x => x.SelectableLevel == selectableLevel);
+                    if (currentConfigLevel != null)
+                    {
+                        // Don't include company moons
+                        if (currentConfigLevel.NumberlessPlanetName == "Gordion" ||currentConfigLevel.NumberlessPlanetName == "Galetry" ||currentConfigLevel.NumberlessPlanetName == "Oxyde")
+                        {
+                            continue;
+                        }
+                        // Don't add the same moon twice
+                        if (!possibleMoons.Contains(currentConfigLevel))
+                        {
+                            Logger.LogDebug($"Random Moons adding possible moon " +currentConfigLevel.NumberlessPlanetName);
+                            possibleMoons.Add(currentConfigLevel);
+                        }
+                    }
+                    else
+                    {
+                        Logger.LogError($"Random Moons could not find a matching level for " + entry);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError($"Random Moons error when trying to parse " + entry + ": " + ex);
+                }
+            }
+
+            if (possibleMoons.Count == 0)
+            {
+                Logger.LogWarning($"Random Moons has no valid moons to select!");
+                return;
+            }
+            List<string> newlySelectedMoons = new List<string>();
+            // Select 3 different moons (or whatever config says), or fewer if the config has less than 3
+            int moonsToSelect = Mathf.Min(Config.randomMoonAmount.Value, possibleMoons.Count);
+            for (int i = 0; i < moonsToSelect; i++)
+            {
+                int randomIndex = UnityEngine.Random.Range(0, possibleMoons.Count);
+                ExtendedLevel selectedMoon = possibleMoons[randomIndex];
+                Logger.LogDebug($"Random Moons selected moon " + selectedMoon.NumberlessPlanetName);
+                newlySelectedMoons.Add(selectedMoon.NumberlessPlanetName);
+                possibleMoons.RemoveAt(randomIndex);
+            }
+            string selectedMoonsString = string.Join(";", newlySelectedMoons); //Take list and put them all together
+            SetRandomMoons(selectedMoonsString, currentQuota);
+            ModDataInstance.ZMTSaveData();
+            ZMTNetwork.SendRandomMoons(selectedMoonsString, currentQuota);
+            Logger.LogInfo($"Random Moons rolled for quota {currentQuota + 1}: " + ", " + newlySelectedMoons);
+        }
+        public void SetRandomMoons(string selectedMoons, int quotaNumber)
+        {
+            currentlySelectedRandomMoons = new List<string>(selectedMoons.Split(new[] { ';' },StringSplitOptions.RemoveEmptyEntries));
+            lastRandomMoonsQuota = quotaNumber;
+            ModDataInstance.selectedRandomMoons = selectedMoons;
+            ModDataInstance.lastRandomMoonsQuota = quotaNumber;
+            Logger.LogInfo($"Random Moons selection set to: " + currentlySelectedRandomMoons);
+            if (StartOfRound.Instance != null && StartOfRound.Instance.currentLevel != null)
+            {
+                CalculateMoonPrices();
+            }
+        }
+        public void LoadRandomMoonsFromSave()
+        {
+            Logger.LogDebug($"Attempting to load Random Moons from save");
+            if (ModDataInstance == null) return;
+            if (string.IsNullOrEmpty(ModDataInstance.selectedRandomMoons))
+            {
+                Logger.LogDebug($"No saved Random Moons selection found");
+                return;
+            }
+            SetRandomMoons(ModDataInstance.selectedRandomMoons, ModDataInstance.lastRandomMoonsQuota);
+            Logger.LogInfo($"Loaded Random Moons selection from save");
+        }
         public float GetWeatherRiskLevelFloat(Weather weather, out bool isCombined)
         {
             isCombined = false;
@@ -764,19 +1098,32 @@ namespace ZetasMoonTweaks
                 float totalRiskLevelsAverage = 0;
                 float totalWeatherCountBonus = 0;
                 float combinedWeatherRiskLevel = 0;
+                float progressingWeatherRiskLevel = 0;
                 // Is likely a combined weather, or could just be that WeatherTweaks is installed
                 List<string> encounteredWeathers = new List<string>();
                 for (int i = 0; i < tweaksWeather.WeatherTypes.Count; i++) //Loop through every current weather 
                 {
                     float currentWeatherRiskLevel = ConvertWeatherNameToRiskFloat(tweaksWeather.WeatherTypes[i].WeatherName);
                     totalRiskLevels += currentWeatherRiskLevel;
-                    if (!encounteredWeathers.Contains(tweaksWeather.WeatherTypes[i].WeatherName))
+                    if (tweaksWeather.CustomType == CustomWeatherType.Combined)
                     {
-                        encounteredWeathers.Add(tweaksWeather.WeatherTypes[i].WeatherName);
-                        if (tweaksWeather.WeatherTypes[i].WeatherName != "None" || tweaksWeather.WeatherTypes[i].WeatherName != "Clear" || tweaksWeather.WeatherTypes[i].WeatherName != "Cloudy" || tweaksWeather.WeatherTypes[i].WeatherName != "NightShift")
+                        if (!encounteredWeathers.Contains(tweaksWeather.WeatherTypes[i].WeatherName)) //Only incresae total count bonus if its a unique weather
                         {
-                            totalWeatherCountBonus += 0.15f; //Only add to this list and incresae total coiunt bonus if its a unique weather
+                            encounteredWeathers.Add(tweaksWeather.WeatherTypes[i].WeatherName);
+                            if (tweaksWeather.WeatherTypes[i].WeatherName != "None" || tweaksWeather.WeatherTypes[i].WeatherName != "Clear" || tweaksWeather.WeatherTypes[i].WeatherName != "Cloudy" || tweaksWeather.WeatherTypes[i].WeatherName != "NightShift")
+                            {
+                                float baseWeatherIncrease = 0.5f;
+                                float scaledWeatherIncrease = baseWeatherIncrease * currentWeatherRiskLevel; //Half current risk level
+                                totalWeatherCountBonus += scaledWeatherIncrease;
+                            }
                         }
+                    }
+                    else //Must be progressing
+                    {
+                        //Total = each individual weather risk level
+                        //Each individual weather risk level = current risk level / total number of weathers
+                        float scaledWeatherIncrease = currentWeatherRiskLevel / tweaksWeather.WeatherTypes.Count;
+                        totalWeatherCountBonus += scaledWeatherIncrease;
                     }
                     if (highestRiskLevelFound < currentWeatherRiskLevel)
                     {
@@ -784,9 +1131,16 @@ namespace ZetasMoonTweaks
                     }
                 }
                 totalRiskLevelsAverage = totalRiskLevels / tweaksWeather.WeatherTypes.Count;
-                totalRiskLevelsAverage += totalWeatherCountBonus;
-                combinedWeatherRiskLevel = highestRiskLevelFound + totalWeatherCountBonus;
-                output = combinedWeatherRiskLevel;
+                combinedWeatherRiskLevel = highestRiskLevelFound + totalRiskLevelsAverage + totalWeatherCountBonus; //Combined is the highest level + the average + the bonus
+                progressingWeatherRiskLevel = totalWeatherCountBonus;
+                if (tweaksWeather.CustomType == CustomWeatherType.Combined)
+                {
+                    output = combinedWeatherRiskLevel;
+                }
+                else
+                {
+                    output = progressingWeatherRiskLevel;
+                }
                 isCombined = true; //E.g. For Light Fog, highestrisklevelfound will be low, average but totalWeatherCount will be high
             }
             else

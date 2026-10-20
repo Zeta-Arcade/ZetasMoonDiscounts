@@ -1,4 +1,13 @@
-﻿using System;
+﻿using Dawn;
+using Dawn.Internal;
+using Dawn.Utils;
+using LethalLevelLoader;
+using System;
+using System.Linq;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
+using System.Reflection;
+using DunGen.Graph;
 
 namespace ZetasMoonTweaks
 {
@@ -110,31 +119,12 @@ namespace ZetasMoonTweaks
         }
         public static string SwapFloatDecimalsForRiskSymbol(float riskFloat)
         {
-            string output = "";
-            // Take float, e.g. 9.76
-            float isolatedDecimals = riskFloat - (int)riskFloat; // E.g. 9.76 - 9 = 0.76
-            double isolatedDecRounded = Math.Round(isolatedDecimals, 2);
-            if (isolatedDecRounded >= 0.85)
-            {
-                output = "*";
-            }
-            else if (isolatedDecRounded >= 0.75)
-            {
-                output = "++";
-            }
-            else if (isolatedDecRounded >= 0.65)
-            {
-                output = "+";
-            }
-            else if (isolatedDecRounded >= 0.3)
-            {
-                output = "";
-            }
-            else
-            {
-                output = "-";
-            }
-            return output;
+            float decimals = riskFloat - (float)Math.Floor(riskFloat);
+            if (decimals >= 0.81f) return "*"; //Should be in the middle now
+            if (decimals >= 0.71f) return "++";
+            if (decimals >= 0.58f) return "+";
+            if (decimals >= 0.405f) return "";
+            return "-";
         }
         public static float ConvertRiskLevelToFloat(string riskLevel)
         {
@@ -163,6 +153,64 @@ namespace ZetasMoonTweaks
             string part2 = SwapFloatDecimalsForRiskSymbol(floatRiskLevel);
             output = part1 + part2;
             return output;
+        }
+        public static string CleanInteriorName(string interiorName)
+        {
+            //Get rid of Clones, Dungeons and Flow
+            interiorName = interiorName.Replace("(Clone)", "").Replace("DungeonFlow", "").Replace("Flow", "").Replace("Dungeon", "").Trim();
+            // If words are in PascalCase then seperate them
+            interiorName = Regex.Replace(interiorName, @"([a-z])([A-Z])", "$1 $2");
+            // Remove spaces
+            interiorName = Regex.Replace(interiorName, @"\s+", " ").Trim();
+            return interiorName;
+        }
+        public static string? GetCurrentInteriorName()
+        {
+            var dungeonGenerator = RoundManager.Instance?.dungeonGenerator;
+            if (dungeonGenerator == null) return null;
+            return dungeonGenerator.Generator?.DungeonFlow?.name;
+        }
+        public static DawnDungeonInfo? GetCurrentDungeonInfo()
+        {
+            var dungeon = RoundManager.Instance?.dungeonGenerator?.Generator?.DungeonFlow;
+            if (dungeon == null) return null;
+            return dungeon.GetDawnInfo();
+        }
+        public static float GetInteriorChance(DawnDungeonInfo? selectedDungeon)
+        {
+            if (selectedDungeon == null) return -1f;
+            var currentLevel = StartOfRound.Instance.currentLevel;
+            if (currentLevel == null) return -1f;
+            var moonInfo = LethalContent.Moons.Values.FirstOrDefault(m => m.Level == currentLevel);
+            if (moonInfo == null) return -1f;
+            var weatherEffect = TimeOfDayRefs.GetCurrentWeatherEffect(moonInfo.Level);
+            DawnWeatherEffectInfo weatherInfo = null;
+            if (weatherEffect != null)
+            {
+                var method = typeof(WeatherEffectExtensions).GetMethod("GetDawnInfo", BindingFlags.Static | BindingFlags.NonPublic);
+                if (method != null)
+                {
+                    weatherInfo = method.Invoke(null, new object[] { weatherEffect }) as DawnWeatherEffectInfo; 
+                }
+            }
+            var ctx = new SpawnWeightContext(moonInfo,null,weatherInfo).WithExtra(SpawnWeightExtraKeys.RoutingPriceKey,moonInfo.DawnPurchaseInfo.Cost.Provide());
+            float totalWeight = 0f;
+            float selectedWeight = 0f;
+            foreach (var dungeonInfo in LethalContent.Dungeons.Values)
+            {
+                float weight = dungeonInfo.Weights.GetFor(moonInfo, ctx) ?? 0f;
+                if (weight <= 0f) continue;
+                totalWeight += weight;
+                if (ReferenceEquals(dungeonInfo, selectedDungeon)) //Are they ACTUALLY the same
+                {
+                    selectedWeight = weight;
+                }
+            }
+            if (totalWeight <= 0f || selectedWeight <= 0f)
+            {
+                return -1f;
+            }
+            return selectedWeight / totalWeight * 100f;
         }
     }
 }
