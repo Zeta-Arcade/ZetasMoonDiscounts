@@ -8,7 +8,6 @@ using LethalLevelLoader;
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Net.Mail;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -492,7 +491,7 @@ namespace ZetasMoonTweaks
                 if (grabbable is ShotgunItem shotgun)
                 {
                     //Expensive method aaa, but should only run when items spawn on Oxyde IF they're in the blacklist so it should be okay
-                    NutcrackerEnemyAI[] nutcrackers = UnityEngine.Object.FindObjectsOfType<NutcrackerEnemyAI>(); 
+                    NutcrackerEnemyAI[] nutcrackers = UnityEngine.Object.FindObjectsOfType<NutcrackerEnemyAI>();
                     foreach (NutcrackerEnemyAI nutcracker in nutcrackers)
                     {
                         if (nutcracker != null && !nutcracker.isEnemyDead && nutcracker.gun == shotgun)
@@ -506,16 +505,15 @@ namespace ZetasMoonTweaks
                 networkObject.Despawn(true);
             }
         }
-        internal class PlayerBodyValuePatch
+        [HarmonyPatch(typeof(RagdollGrabbableObject))]
+        internal static class PlayerBodyValuePatch
         {
+            [HarmonyPatch(nameof(RagdollGrabbableObject.Start))]
             [HarmonyPostfix]
-            [HarmonyPatch(typeof(RagdollGrabbableObject), nameof(RagdollGrabbableObject.Start))]
             private static void StartPostPatch(RagdollGrabbableObject __instance)
             {
-                if (ZMTBase.Config.bodies0Value.Value)
-                {
-                    __instance.SetScrapValue(0); //Just set it to 0 value
-                }
+                if (!ZMTBase.Config.bodies0Value.Value) return;
+                __instance.SetScrapValue(0);
             }
         }
     }
