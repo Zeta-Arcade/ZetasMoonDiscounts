@@ -74,11 +74,11 @@ namespace ZetasMoonTweaks
         public static string SwapIntForRiskLetter(int riskInt)
         {
             string output = "";
-            if (riskInt > 10)
+            if (riskInt > 9)
             {
                 output = "X";
             }
-            else if (riskInt > 6)
+            else if (riskInt > 5)
             {
                 output = "S";
             }
