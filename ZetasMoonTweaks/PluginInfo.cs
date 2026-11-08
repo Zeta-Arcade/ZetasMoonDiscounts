@@ -4,6 +4,6 @@
     {
         public const string modGUID = "ZetaArcade.ZetasMoonTweaks";
         public const string modName = "ZetasMoonTweaks";
-        public const string modVersion = "1.1.10";
+        public const string modVersion = "1.1.11";
     }
 }

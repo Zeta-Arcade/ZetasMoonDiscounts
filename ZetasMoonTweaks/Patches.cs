@@ -217,9 +217,23 @@ namespace ZetasMoonTweaks
                 if (ZMTBase.Config.RelockOxydeOnEject.Value) //If Enabled option to Relock Oxyde
                 {
                     ExtendedLevel oxydeRef = PatchedContent.ExtendedLevels.Find(x => x.NumberlessPlanetName == "Oxyde");
-                    if (oxydeRef == null) return;
-                    LockMoon(oxydeRef.SelectableLevel);
-                    Logger.LogInfo($"Oxyde is now re-locked!");
+                    if (oxydeRef != null)
+                    {
+                        LockMoon(oxydeRef.SelectableLevel);
+                        Logger.LogInfo($"Oxyde is now re-locked!");
+                    }
+                }
+                if (ZMTBase.Config.gamemode.Value == ConfigHandler.Gamemode.RandomMoons)
+                {
+                    if (NetworkManager.Singleton.IsHost)
+                    {
+                        ZMTBase.Instance.ResetRandomMoons();
+                        ZMTBase.Instance.RollRandomMoons();
+                    }
+                    else
+                    {
+                        StartOfRoundPatch.ResetRandomMoonsSync();
+                    }
                 }
             }
             [HarmonyPatch("PassTimeToNextDay")]
@@ -386,7 +400,7 @@ namespace ZetasMoonTweaks
                 ZMTBase.Instance.SetOxydeCostFromConfigs();
                 if (ZMTBase.Config.gamemode.Value == ConfigHandler.Gamemode.RandomMoons)
                 {
-                    if (NetworkManager.Singleton != null && NetworkManager.Singleton.IsHost)
+                    if (NetworkManager.Singleton.IsHost)
                     {
                         Logger.LogDebug("Random Moons new quota detected");
                         ZMTBase.Instance.RollRandomMoons();

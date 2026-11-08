@@ -86,6 +86,15 @@ namespace ZetasMoonTweaks
                 Logger.LogDebug("Seed already set as: " + ModDataInstance.currentQuotaRoll);
             }
         }
+        public void ResetRandomMoons()
+        {
+            Logger.LogDebug("Resetting Random Moons after ejection");
+            currentlySelectedRandomMoons.Clear();
+            lastRandomMoonsQuota = -1;
+            ModDataInstance.selectedRandomMoons = "";
+            ModDataInstance.lastRandomMoonsQuota = -1;
+            ModDataInstance.ZMTSaveData();
+        }
         public void SetNewSeed(int newQuotaRoll)
         {
             Logger.LogDebug("New seed set as: " + newQuotaRoll);
