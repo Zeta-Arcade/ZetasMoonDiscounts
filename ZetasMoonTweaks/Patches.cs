@@ -436,6 +436,20 @@ namespace ZetasMoonTweaks
                 }
             }
         }
+        [HarmonyPatch(typeof(LungProp))]
+        static class LungPropPatch
+        {
+            [HarmonyPatch("Start")]
+            [HarmonyPrefix]
+            [HarmonyBefore(WeatherRegistry.PluginInfo.PLUGIN_GUID)] //Go after WR
+            private static void StartPatch(LungProp __instance)
+            {
+                if (!ZMTBase.Config.apparatusScale.Value) return;
+                float moonMultiplier = RoundManager.Instance.scrapValueMultiplier;
+                float scaledMultiplier = Mathf.Pow(moonMultiplier, ZMTBase.Config.apparatusValueScaler.Value);
+                __instance.SetScrapValue(Mathf.RoundToInt(__instance.scrapValue * scaledMultiplier));
+            }
+        }
         [HarmonyPatch(typeof(NetworkObject))]
         internal class PreventSellScrapsOnOxydePatch
         {

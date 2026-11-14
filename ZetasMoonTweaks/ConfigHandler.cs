@@ -14,6 +14,8 @@ namespace ZetasMoonTweaks
         [SyncedEntryField] public SyncedEntry<bool> noFirstDayShopSales;
         [SyncedEntryField] public SyncedEntry<bool> bodies0Value;
         [SyncedEntryField] public SyncedEntry<Gamemode> gamemode;
+        [SyncedEntryField] public SyncedEntry<bool> apparatusScale;
+        [SyncedEntryField] public SyncedEntry<float> apparatusValueScaler;
         // Interior Name Popup
         [SyncedEntryField] public SyncedEntry<bool> interiorNamePopup;
         [SyncedEntryField] public SyncedEntry<string> interiorNamePrefix;
@@ -74,6 +76,8 @@ namespace ZetasMoonTweaks
             AutoCompanyBuilding = cfg.BindSyncedEntry<bool>("General", "Auto Company Building", true, "If true, when there are 0 days left to the Deadline, automatically route the ship back to the Company.");
             noFirstDayShopSales = cfg.BindSyncedEntry<bool>("General", "No First Day Shop Sales", false, "If true, no store items will have sales on them during the first day on the first quota. This prevents reloading to generate an advantageous Day 1 sale on something essential like Shovels.");
             bodies0Value = cfg.BindSyncedEntry<bool>("General", "Bodies 0 Value", false, "If true, player bodies will be worth 0 credits instead of 5. Prevents infinite selling exploits.");
+            apparatusScale = cfg.BindSyncedEntry<bool>("General", "Apparatus Scale Value with Moon Scrap Value Multiplier", true, "If true, the Apparatus value will be patched to have it's value multiplied by the current moon scrap value multiplier, useful for mods like LunarConfig.");
+            apparatusValueScaler = cfg.BindSyncedEntry<float>("General", "Apparatus Value Exponent", 1f, new ConfigDescription("If 'Apparatus Scale Value with Moon Scrap Value Multiplier' is enabled, this controls how strongly the scrap value scales with the moon's scrap value multiplier. Higher values provide increasingly larger bonuses on moons with higher multipliers. 1.0 = no scaling, 1.585 = 3x value on a 2x moon, 2.0 = 4x value on a 2x moon etc. In short, big multipliers get even bigger, small multipliers don't increase much!", new AcceptableValueRange<float>(1f, 20f)));
             interiorNamePopup = cfg.BindSyncedEntry<bool>("Interior Name Popup", "Toggle Interior Name Popup", true, "If true, a popup will be shown with the name of the interior when you first enter each day.");
             addPercentageInfo = cfg.BindSyncedEntry<bool>("Interior Name Popup", "Add Percentage Info", true, "If true, the interior name popup will also display the chance of that interior appearing at the end.");
             interiorNamePrefix = cfg.BindSyncedEntry<string>("Interior Name Popup", "Interior Name Prefix", "Interior:", "A prefix to add to the interior names. A space is added after by default.");
