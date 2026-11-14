@@ -10,6 +10,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
+using WeatherRegistry;
 
 namespace ZetasMoonTweaks
 {
@@ -441,11 +442,12 @@ namespace ZetasMoonTweaks
         {
             [HarmonyPatch("Start")]
             [HarmonyPrefix]
-            [HarmonyBefore(WeatherRegistry.PluginInfo.PLUGIN_GUID)] //Go after WR
+            [HarmonyPriority(Priority.Last)]
             private static void StartPatch(LungProp __instance)
             {
                 if (!ZMTBase.Config.apparatusScale.Value) return;
-                float moonMultiplier = RoundManager.Instance.scrapValueMultiplier;
+                float weatherMultiplier = WeatherManager.GetCurrentWeather(RoundManager.Instance.currentLevel).ScrapValueMultiplier;
+                float moonMultiplier = RoundManager.Instance.scrapValueMultiplier / (0.4f * weatherMultiplier);
                 float scaledMultiplier = Mathf.Pow(moonMultiplier, ZMTBase.Config.apparatusValueScaler.Value);
                 __instance.SetScrapValue(Mathf.RoundToInt(__instance.scrapValue * scaledMultiplier));
             }
